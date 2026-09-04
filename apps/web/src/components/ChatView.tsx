@@ -4676,8 +4676,9 @@ export default function ChatView(props: ChatViewProps) {
     [activeThreadRef, storeSetTerminalOpen],
   );
   const toggleTerminalVisibility = useCallback(() => {
-    if (!activeThreadRef || (!canReadTerminal && !canOperateTerminal)) return;
+    if (!activeThreadRef) return;
     const nextOpen = !terminalUiState.terminalOpen;
+    if (nextOpen && !canReadTerminal && !canOperateTerminal) return;
     if (nextOpen && canOperateTerminal && terminalUiState.terminalIds.length === 0) {
       if (!activeThreadId || !activeProject) {
         return;
@@ -5903,7 +5904,10 @@ export default function ChatView(props: ChatViewProps) {
             threadRef: activeThreadRef,
           });
         }
-        if (surface.kind === "terminal" && canOperateTerminal) {
+        if (
+          surface.kind === "terminal" &&
+          readEnvironmentScope(activeThreadRef.environmentId, AuthTerminalOperateScope)
+        ) {
           for (const terminalId of surface.terminalIds) {
             storeCloseTerminal(activeThreadRef, terminalId);
             void closeTerminalMutation({
@@ -5920,7 +5924,6 @@ export default function ChatView(props: ChatViewProps) {
       canOperatePreview,
       closePreview,
       closeTerminalMutation,
-      canOperateTerminal,
       storeCloseTerminal,
     ],
   );
@@ -5975,7 +5978,10 @@ export default function ChatView(props: ChatViewProps) {
         closeAfterAgentBrowserConfirmation([surface], finishClose);
         return;
       }
-      if (surface.kind !== "terminal") {
+      if (
+        surface.kind !== "terminal" ||
+        !readEnvironmentScope(activeThreadRef.environmentId, AuthTerminalOperateScope)
+      ) {
         finishClose();
         return;
       }
@@ -5988,10 +5994,7 @@ export default function ChatView(props: ChatViewProps) {
           (terminalId) => activeTerminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId),
         );
       void confirmTerminalClose([activeLabel, ...otherLabels]).then((confirmed) => {
-        if (
-          confirmed &&
-          readEnvironmentScope(activeThreadRef.environmentId, AuthTerminalOperateScope)
-        ) {
+        if (confirmed) {
           finishClose();
         }
       });
@@ -7782,6 +7785,7 @@ export default function ChatView(props: ChatViewProps) {
       }
 
       if (command === "terminal.toggle") {
+        if (!terminalUiState.terminalOpen && !canReadTerminal && !canOperateTerminal) return;
         event.preventDefault();
         event.stopPropagation();
         toggleTerminalVisibility();
@@ -7968,6 +7972,7 @@ export default function ChatView(props: ChatViewProps) {
     activeProject,
     activeRightPanelSurface,
     activeProjectScripts,
+    canReadTerminal,
     canOperateTerminal,
     addTerminalSurface,
     activeThreadRef,
