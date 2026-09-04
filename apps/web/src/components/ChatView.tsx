@@ -50,6 +50,7 @@ import { useAttachmentUploadStore } from "../lib/attachmentUploadQueue";
 import {
   AuthOrchestrationOperateScope,
   AuthSettingsWriteScope,
+  AuthSourceControlWriteScope,
   type AssistantCitation,
   type ChatFileAttachment,
   CommandId,
@@ -392,6 +393,7 @@ import { useEnvironmentDisconnectDelay } from "../hooks/useEnvironmentDisconnect
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useKnownTerminalSessions, useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useEnvironmentQuery } from "../state/query";
+import { useEnvironmentScope } from "~/state/session";
 import {
   environmentServerConfigsAtom,
   primaryServerAvailableEditorsAtom,
@@ -1566,6 +1568,7 @@ export default function ChatView(props: ChatViewProps) {
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
+  const canWriteSourceControl = useEnvironmentScope(environmentId, AuthSourceControlWriteScope);
   const switchGitRef = useAtomCommand(vcsEnvironment.switchRef, { reportFailure: false });
   const setThreadRuntimeMode = useOrchestrationCommand(threadEnvironment.setRuntimeMode, {
     reportFailure: false,
@@ -2153,7 +2156,7 @@ export default function ChatView(props: ChatViewProps) {
     (isServerThread ? activeThread?.runtimeMode : undefined) ??
     defaultRuntimeMode;
   const isLocalDraftThread = !isServerThread && localDraftThread !== undefined;
-  const canCheckoutPullRequestIntoThread = isLocalDraftThread;
+  const canCheckoutPullRequestIntoThread = canWriteSourceControl && isLocalDraftThread;
   const activeThreadId = activeThread?.id ?? null;
   // Prefer the larger of turn-item-committed ids and projection messages so
   // env lock does not unlock while turn items lag projection hydration.
@@ -7062,6 +7065,7 @@ export default function ChatView(props: ChatViewProps) {
     });
   }, [activeBranchMismatchKey, showBranchMismatchBanner]);
   const handleSwitchCheckoutToThread = useCallback(async () => {
+    if (!canWriteSourceControl) return;
     if (
       !activeProjectCwd ||
       !activeThread ||
@@ -7117,6 +7121,7 @@ export default function ChatView(props: ChatViewProps) {
     setIsRestoringThreadBranch(false);
     scheduleComposerFocus();
   }, [
+    canWriteSourceControl,
     activeProjectCwd,
     activeThread,
     environmentId,
@@ -7399,12 +7404,17 @@ export default function ChatView(props: ChatViewProps) {
     selectedProvider,
   ]);
   const handleRestoreThreadBranch = useCallback(() => {
+    if (!canWriteSourceControl) return;
     if (gitStatusQuery.data?.hasWorkingTreeChanges) {
       setBranchRestoreConfirmOpen(true);
       return;
     }
     void handleSwitchCheckoutToThread();
-  }, [gitStatusQuery.data?.hasWorkingTreeChanges, handleSwitchCheckoutToThread]);
+  }, [
+    canWriteSourceControl,
+    gitStatusQuery.data?.hasWorkingTreeChanges,
+    handleSwitchCheckoutToThread,
+  ]);
   const feedbackBannerItems = useMemo(
     () =>
       feedbackSubmissions.flatMap((submission) => {
@@ -7497,7 +7507,7 @@ export default function ChatView(props: ChatViewProps) {
           <Button
             size="xs"
             variant="ghost"
-            disabled={isRestoringThreadBranch}
+            disabled={!canWriteSourceControl || isRestoringThreadBranch}
             onClick={handleRestoreThreadBranch}
           >
             {isRestoringThreadBranch ? "Restoring..." : "Restore branch"}
@@ -7515,6 +7525,7 @@ export default function ChatView(props: ChatViewProps) {
     activeBranchMismatchKey,
     activeThreadShell,
     serverRuntime?.usageLimitResetAt,
+    canWriteSourceControl,
     feedbackBannerItems,
     limitRecoveryBanner,
     handleRestoreThreadBranch,
@@ -11518,6 +11529,7 @@ export default function ChatView(props: ChatViewProps) {
                   <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
                   <Button
                     variant="default"
+                    disabled={!canWriteSourceControl}
                     onClick={() => {
                       setBranchRestoreConfirmOpen(false);
                       void handleSwitchCheckoutToThread();
