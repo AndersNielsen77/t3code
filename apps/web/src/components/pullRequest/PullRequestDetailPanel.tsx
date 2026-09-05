@@ -1229,7 +1229,12 @@ export function PullRequestDetailPanel({
       return;
     }
     if (checkoutRoot === null) return;
-    if (!prepareThread.isAllowed) return;
+    if (
+      !prepareThread.isAllowed ||
+      !readEnvironmentScope(actingEnvironmentId, AuthSourceControlWriteScope)
+    ) {
+      return;
+    }
     if (
       mode === "worktree" &&
       !readEnvironmentScope(actingEnvironmentId, AuthOrchestrationOperateScope)
