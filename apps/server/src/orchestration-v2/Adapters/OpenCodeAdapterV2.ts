@@ -56,6 +56,7 @@ import * as Stream from "effect/Stream";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import * as ServerConfig from "../../config.ts";
+import { mcpToolPresentation } from "../../provider/McpToolPresentation.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import type { EventNdjsonLogger } from "../../provider/Layers/EventNdjsonLogger.ts";
 import * as ProviderEventLoggers from "../../provider/Layers/ProviderEventLoggers.ts";
@@ -286,6 +287,7 @@ interface ActiveOpenCodeTurn {
   readonly parts: Map<string, Exclude<OpenCodePart, ToolPart>>;
   readonly partIdsByMessage: Map<string, Set<string>>;
   readonly toolNamesByCallId: Map<string, string>;
+  mcpServerNames?: ReadonlyArray<string>;
   readonly providerTurn: OrchestrationV2ProviderTurn;
   nextItemOrdinal: number;
   nativeUserMessageId: string | null;
@@ -1593,12 +1595,44 @@ export function makeOpenCodeAdapterV2(
             | "completedAt"
             | "updatedAt"
           >;
-          const turnItem = openCodeToolTurnItem(base, {
-            name: part.tool,
-            input: toolInput(part),
-            output: toolOutput(part),
-            completedMetadata: part.state.status === "completed" ? part.state.metadata : undefined,
-          });
+          const input = toolInput(part);
+          const output = toolOutput(part);
+          if (part.tool.includes("_") && turn.mcpServerNames === undefined) {
+            turn.mcpServerNames = yield* OpenCodeRuntime.runOpenCodeSdk("mcp.status", () =>
+              client.mcp.status(),
+            ).pipe(
+              Effect.map((response) => Object.keys(response.data ?? {})),
+              Effect.catch(() => Effect.succeed([])),
+            );
+          }
+          const matchingServers = turn.mcpServerNames?.filter((name) =>
+            part.tool.startsWith(`${name.replace(/[^a-zA-Z0-9_-]/g, "_")}_`),
+          );
+          const serverName = matchingServers?.length === 1 ? matchingServers[0] : undefined;
+          const presentation =
+            serverName === undefined
+              ? {}
+              : mcpToolPresentation({
+                  serverName,
+                  toolName: part.tool.slice(serverName.replace(/[^a-zA-Z0-9_-]/g, "_").length + 1),
+                  title: toolTitle(part) === part.tool ? undefined : toolTitle(part),
+                });
+          const turnItem: OrchestrationV2TurnItem = matchingServers?.length
+            ? {
+                ...base,
+                type: "dynamic_tool",
+                ...presentation,
+                toolName: part.tool,
+                input,
+                ...(output === undefined ? {} : { output }),
+              }
+            : openCodeToolTurnItem(base, {
+                name: part.tool,
+                input,
+                output,
+                completedMetadata:
+                  part.state.status === "completed" ? part.state.metadata : undefined,
+              });
           yield* emitProviderEvent({
             type: "node.updated",
             driver: OPENCODE_PROVIDER,
