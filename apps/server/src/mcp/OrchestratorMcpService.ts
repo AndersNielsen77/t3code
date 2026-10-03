@@ -936,8 +936,25 @@ const make = Effect.gen(function* () {
     scope: McpInvocationScope,
     parent: Pick<OrchestrationV2ThreadProjection, "thread" | "runs"> | undefined,
     target: Pick<OrchestrationV2ThreadProjection, "thread">,
+  ) =>
+    parent === undefined || target.thread.id === parent.thread.id
+      ? Effect.void
+      : assertLiveCaller(scope, parent);
+
+  /** Scheduled work outside the caller's own project needs the same live run. */
+  const assertLiveCallerForOtherProject = (
+    scope: McpInvocationScope,
+    parent: Pick<OrchestrationV2ThreadProjection, "thread" | "runs"> | undefined,
+    projectId: ProjectId,
+  ) =>
+    parent === undefined || projectId === parent.thread.projectId
+      ? Effect.void
+      : assertLiveCaller(scope, parent);
+
+  const assertLiveCaller = (
+    scope: McpInvocationScope,
+    parent: Pick<OrchestrationV2ThreadProjection, "thread" | "runs">,
   ) => {
-    if (parent === undefined || target.thread.id === parent.thread.id) return Effect.void;
     const activeRun = ThreadManagementService.latestActiveRun(parent);
     return parent.thread.archivedAt !== null ||
       activeRun === undefined ||
@@ -1299,6 +1316,7 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const { parent, limits } = yield* loadCaller(scope);
         const projectId = yield* resolveProjectTarget(parent, input.projectId);
+        yield* assertLiveCallerForOtherProject(scope, parent, projectId);
         const project = yield* requireProject(projectId);
         // Binding means "wake this thread", which only a thread caller in that project has.
         const bindToCurrentThread =
@@ -1375,6 +1393,7 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const { parent, limits } = yield* loadCaller(scope);
         const existing = yield* loadScheduledTask(input.scheduledTaskId, limits);
+        yield* assertLiveCallerForOtherProject(scope, parent, existing.projectId);
         if (
           input.bindToCurrentThread === true &&
           (parent === undefined || parent.thread.projectId !== existing.projectId)
@@ -1425,8 +1444,9 @@ const make = Effect.gen(function* () {
       }),
     deleteScheduledTask: (scope, input) =>
       Effect.gen(function* () {
-        const { limits } = yield* loadCaller(scope);
+        const { parent, limits } = yield* loadCaller(scope);
         const existing = yield* loadScheduledTask(input.scheduledTaskId, limits);
+        yield* assertLiveCallerForOtherProject(scope, parent, existing.projectId);
         yield* scheduledTasks
           .delete({ id: existing.id })
           .pipe(
