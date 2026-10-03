@@ -30,7 +30,7 @@ import {
 } from "@t3tools/contracts";
 import { SKILL_MENTION_PATTERN } from "@t3tools/shared/composerInlineTokens";
 import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
-import { computerUseToolTitle } from "@t3tools/shared/toolActivity";
+import { dynamicToolTitle } from "@t3tools/shared/toolActivity";
 import { getModelSelectionStringOptionValue, modelSelectionsEqual } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import type {
@@ -490,7 +490,7 @@ export function projectCodexDynamicToolItem(
       ? `${item.server}.${item.tool}`
       : [trimText(item.namespace), item.tool].filter(Boolean).join(".");
   const presentation = item.type === "mcpToolCall" ? mcpToolPresentation(item) : {};
-  const title = computerUseToolTitle(toolName, item.arguments) ?? presentation.title;
+  const title = dynamicToolTitle(toolName, item.arguments) ?? presentation.title;
   const projection: CodexDynamicToolProjection = {
     ...presentation,
     toolName,
