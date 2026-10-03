@@ -437,11 +437,14 @@ it.effect("waitForThread reads the run again only when the run updates", () =>
       Layer.provide(
         Layer.mock(Orchestrator.OrchestratorV2)({
           getThreadEventSequence: () => Effect.succeed(0),
-          streamStoredEventsFrom: () =>
-            Stream.fromEffect(Deferred.succeed(subscribed, undefined)).pipe(
-              Stream.drain,
-              Stream.concat(Stream.fromQueue(events)),
-            ),
+          // Only the run.updated stream carries events in this test.
+          streamStoredEventsFrom: (input) =>
+            input?.eventType === "run.updated"
+              ? Stream.fromEffect(Deferred.succeed(subscribed, undefined)).pipe(
+                  Stream.drain,
+                  Stream.concat(Stream.fromQueue(events)),
+                )
+              : Stream.never,
           getThreadRecords: () =>
             Effect.sync(() => {
               reads += 1;
@@ -461,12 +464,12 @@ it.effect("waitForThread reads the run again only when the run updates", () =>
       .pipe(Effect.forkChild);
     yield* Deferred.await(subscribed);
     status = "completed";
-    yield* Queue.offer(events, stored(1, { type: "turn-item.updated", payload: { id: "item" } }));
+    yield* Queue.offer(events, stored(1, { type: "run.updated", payload: { id: "other-run" } }));
     yield* Queue.offer(events, stored(2, { type: "run.updated", payload: { id: runId, status } }));
     const result = yield* Fiber.join(fiber);
 
     expect(result).toMatchObject({ timedOut: false, run: { id: runId, status: "completed" } });
-    // The first read plus one for the run update. The turn item caused none.
+    // The first read plus one for this run's update. The other run caused none.
     expect(reads).toBe(2);
   }),
 );

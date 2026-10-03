@@ -639,35 +639,44 @@ const make = Effect.gen(function* () {
       }
 
       // Re-read the run only when the thread records a run update or its
-      // deletion, instead of polling the projection for up to an hour.
-      const wait = orchestrator
-        .streamStoredEventsFrom({ threadId: input.threadId, afterSequence })
-        .pipe(
-          Stream.mapError(loadError),
-          Stream.filter(
-            (stored) =>
-              (stored.event.type === "run.updated" && stored.event.payload.id === selectedRun.id) ||
-              stored.event.type === "thread.deleted",
+      // deletion, instead of polling the projection for up to an hour. Each
+      // stream keeps one event type, so transcript events never fill its buffer.
+      const wait = Stream.merge(
+        orchestrator.streamStoredEventsFrom({
+          threadId: input.threadId,
+          afterSequence,
+          eventType: "run.updated",
+        }),
+        orchestrator.streamStoredEventsFrom({
+          threadId: input.threadId,
+          afterSequence,
+          eventType: "thread.deleted",
+        }),
+      ).pipe(
+        Stream.mapError(loadError),
+        Stream.filter(
+          (stored) =>
+            stored.event.type !== "run.updated" || stored.event.payload.id === selectedRun.id,
+        ),
+        Stream.mapEffect(() =>
+          getProjectThreadRecords(input, ["runs"], { runIds: [selectedRun.id] }).pipe(
+            Effect.flatMap((current) => {
+              const run = current.runs.find((candidate) => candidate.id === selectedRun.id);
+              return run === undefined
+                ? Effect.fail(
+                    new ThreadManagementRunNotFoundError({
+                      threadId: input.threadId,
+                      runId: selectedRun.id,
+                    }),
+                  )
+                : Effect.succeed(run);
+            }),
           ),
-          Stream.mapEffect(() =>
-            getProjectThreadRecords(input, ["runs"], { runIds: [selectedRun.id] }).pipe(
-              Effect.flatMap((current) => {
-                const run = current.runs.find((candidate) => candidate.id === selectedRun.id);
-                return run === undefined
-                  ? Effect.fail(
-                      new ThreadManagementRunNotFoundError({
-                        threadId: input.threadId,
-                        runId: selectedRun.id,
-                      }),
-                    )
-                  : Effect.succeed(run);
-              }),
-            ),
-          ),
-          Stream.filter((run) => isTerminalRunStatus(run.status)),
-          Stream.runHead,
-          Effect.timeoutOption(Duration.millis(Math.max(1, input.timeoutMs))),
-        );
+        ),
+        Stream.filter((run) => isTerminalRunStatus(run.status)),
+        Stream.runHead,
+        Effect.timeoutOption(Duration.millis(Math.max(1, input.timeoutMs))),
+      );
       const waited = Option.flatten(yield* wait);
       if (Option.isSome(waited)) {
         return { threadId: input.threadId, run: waited.value, timedOut: false };

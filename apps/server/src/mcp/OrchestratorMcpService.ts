@@ -74,14 +74,14 @@ import type { McpInvocationScope } from "./McpInvocationContext.ts";
 
 const DEFAULT_WAIT_TIMEOUT_MS = 10 * 60 * 1_000;
 const MAX_WAIT_TIMEOUT_MS = 60 * 60 * 1_000;
-// Events that can move a delegated task's status: runs and tasks on the parent
-// or child thread, and a child's background work (pending provider tasks).
-const TASK_WAKE_EVENT_TYPES: ReadonlySet<string> = new Set([
-  "run.created",
-  "run.updated",
-  "subagent.updated",
-  "provider-thread.updated",
-]);
+// Events that can make a delegated task terminal: the parent's task record,
+// and the child's runs, nested tasks, and pending provider background work.
+const TASK_WAKE_EVENTS = [
+  { thread: "parent", eventType: "subagent.updated" },
+  { thread: "child", eventType: "run.updated" },
+  { thread: "child", eventType: "subagent.updated" },
+  { thread: "child", eventType: "provider-thread.updated" },
+] as const;
 const DEFAULT_THREAD_LIST_LIMIT = 50;
 const DEFAULT_THREAD_READ_LIMIT = 50;
 const DEFAULT_THREAD_RUN_LIMIT = 10;
@@ -1175,15 +1175,18 @@ const make = Effect.gen(function* () {
         .pipe(Effect.mapError(streamError));
       const initial = yield* readTask(scope, taskId, false, true);
       if (isTerminalTaskStatus(initial.status)) return Option.some(initial);
-      return yield* Stream.merge(
-        threadManagement.streamStoredEventsFrom({ threadId: scope.threadId, afterSequence }),
-        threadManagement.streamStoredEventsFrom({
-          threadId: initial.childThreadId,
-          afterSequence,
-        }),
+      // One stream per event type, so transcript events never fill a buffer.
+      return yield* Stream.mergeAll(
+        TASK_WAKE_EVENTS.map(({ thread, eventType }) =>
+          threadManagement.streamStoredEventsFrom({
+            threadId: thread === "parent" ? scope.threadId : initial.childThreadId,
+            afterSequence,
+            eventType,
+          }),
+        ),
+        { concurrency: "unbounded" },
       ).pipe(
         Stream.mapError(streamError),
-        Stream.filter((stored) => TASK_WAKE_EVENT_TYPES.has(stored.event.type)),
         Stream.mapEffect(() => readTask(scope, taskId, false, true)),
         Stream.filter((result) => isTerminalTaskStatus(result.status)),
         Stream.runHead,
