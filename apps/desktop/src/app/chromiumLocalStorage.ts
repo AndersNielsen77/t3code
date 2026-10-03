@@ -102,7 +102,7 @@ const unmaskCrc = (masked: number) => {
   return ((rotated >>> 17) | (rotated << 15)) >>> 0;
 };
 
-export function decompressSnappy(input: Uint8Array): Uint8Array {
+function decompressSnappy(input: Uint8Array): Uint8Array {
   const reader = new Reader(input);
   const output = new Uint8Array(reader.varint());
   let written = 0;
@@ -151,7 +151,7 @@ export function decompressSnappy(input: Uint8Array): Uint8Array {
  * Splits a LevelDB log (write-ahead log or MANIFEST) into its records. A torn
  * or corrupt record ends the log, the same point LevelDB's own recovery stops.
  */
-export function readLogRecords(bytes: Uint8Array): Uint8Array[] {
+function readLogRecords(bytes: Uint8Array): Uint8Array[] {
   const records: Uint8Array[] = [];
   let pending: Uint8Array[] | null = null;
   let offset = 0;
@@ -201,7 +201,7 @@ interface LiveFiles {
 }
 
 /** Replays MANIFEST version edits to find the live table files and log. */
-export function readManifest(bytes: Uint8Array): LiveFiles {
+function readManifest(bytes: Uint8Array): LiveFiles {
   const tables = new Set<number>();
   let logNumber = 0;
   let previousLogNumber = 0;
