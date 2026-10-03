@@ -908,6 +908,8 @@ describe("OpenCodeAdapterV2", () => {
                 "my.server_with_underscores": { status: "connected" },
                 ambiguous: { status: "connected" },
                 ambiguous_server: { status: "connected" },
+                code: { status: "connected" },
+                apply: { status: "connected" },
               },
             };
           },
@@ -972,17 +974,50 @@ describe("OpenCodeAdapterV2", () => {
           },
         }),
       );
+      for (const tool of ["code_search", "apply_patch"]) {
+        yield* Effect.promise(() =>
+          nativeEvents.push({
+            type: "message.part.updated",
+            properties: {
+              sessionID: nativeSessionId,
+              part: {
+                id: `native-${tool}`,
+                sessionID: nativeSessionId,
+                messageID: "mcp-assistant",
+                type: "tool",
+                callID: `native-${tool}`,
+                tool,
+                state: {
+                  status: "completed",
+                  input: { query: "needle", filePath: "local.ts" },
+                  title: `Native ${tool}`,
+                  metadata: {},
+                  output: "done",
+                  time: { start: 1, end: 2 },
+                },
+              },
+            },
+          }),
+        );
+      }
       yield* Effect.promise(() =>
         nativeEvents.push({
           type: "session.compacted",
           properties: { sessionID: nativeSessionId },
         }),
       );
-      const items = (yield* Fiber.join(received)).flatMap((event) =>
-        event.type === "turn_item.updated" && event.turnItem.type === "dynamic_tool"
-          ? [event.turnItem]
-          : [],
+      const allItems = (yield* Fiber.join(received)).flatMap((event) =>
+        event.type === "turn_item.updated" ? [event.turnItem] : [],
       );
+      assert.equal(
+        allItems.find((item) => item.title === "Native code_search")?.type,
+        "web_search",
+      );
+      assert.equal(
+        allItems.find((item) => item.title === "Native apply_patch")?.type,
+        "file_change",
+      );
+      const items = allItems.filter((item) => item.type === "dynamic_tool");
       assert.deepEqual(
         items.slice(0, 3).map((item) => item.status),
         ["running", "completed", "failed"],

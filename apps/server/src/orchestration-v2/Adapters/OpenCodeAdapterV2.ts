@@ -1605,8 +1605,11 @@ export function makeOpenCodeAdapterV2(
               Effect.catch(() => Effect.succeed([])),
             );
           }
-          const matchingServers = turn.mcpServerNames?.filter((name) =>
-            part.tool.startsWith(`${name.replace(/[^a-zA-Z0-9_-]/g, "_")}_`),
+          const matchingServers = turn.mcpServerNames?.filter(
+            (name) =>
+              part.tool !== "code_search" &&
+              part.tool !== "apply_patch" &&
+              part.tool.startsWith(`${name.replace(/[^a-zA-Z0-9_-]/g, "_")}_`),
           );
           const serverName = matchingServers?.length === 1 ? matchingServers[0] : undefined;
           const presentation =
