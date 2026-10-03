@@ -1597,19 +1597,20 @@ export function makeOpenCodeAdapterV2(
           >;
           const input = toolInput(part);
           const output = toolOutput(part);
-          if (part.tool.includes("_") && turn.mcpServerNames === undefined) {
-            turn.mcpServerNames = yield* OpenCodeRuntime.runOpenCodeSdk("mcp.status", () =>
-              client.mcp.status(),
+          const isNativeTool = part.tool === "code_search" || part.tool === "apply_patch";
+          if (!isNativeTool && part.tool.includes("_") && turn.mcpServerNames === undefined) {
+            const serverNames = yield* OpenCodeRuntime.runOpenCodeSdk("mcp.status", (signal) =>
+              client.mcp.status(undefined, { signal, throwOnError: true }),
             ).pipe(
+              Effect.timeout("1 second"),
               Effect.map((response) => Object.keys(response.data ?? {})),
-              Effect.catch(() => Effect.succeed([])),
+              Effect.catch(() => Effect.succeed(undefined)),
             );
+            if (serverNames !== undefined) turn.mcpServerNames = serverNames;
           }
           const matchingServers = turn.mcpServerNames?.filter(
             (name) =>
-              part.tool !== "code_search" &&
-              part.tool !== "apply_patch" &&
-              part.tool.startsWith(`${name.replace(/[^a-zA-Z0-9_-]/g, "_")}_`),
+              !isNativeTool && part.tool.startsWith(`${name.replace(/[^a-zA-Z0-9_-]/g, "_")}_`),
           );
           const serverName = matchingServers?.length === 1 ? matchingServers[0] : undefined;
           const presentation =
