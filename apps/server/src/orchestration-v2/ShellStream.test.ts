@@ -25,7 +25,6 @@ import {
   shellStreamItemsFromInitialSnapshot,
   shellStreamItemsFromResumeSnapshot,
   skipUnchangedThreadShells,
-  UNCHANGED_THREAD_SHELL_RESEND_MS,
 } from "./ShellStream.ts";
 
 function project(sequence: number, id: string): ApplicationStoredEvent {
@@ -568,7 +567,8 @@ describe("skipUnchangedThreadShells", () => {
         updated(3, shell("a", { updatedAt: at(200), itemCount: 2, visibleItemCount: 2 })),
         updated(4, shell("a", { updatedAt: at(300), itemCount: 2, visibleItemCount: 2 })),
         updated(5, shell("b")),
-        { advanceMs: UNCHANGED_THREAD_SHELL_RESEND_MS },
+        // The resend window is 5 s.
+        { advanceMs: 5_000 },
         updated(6, shell("a", { updatedAt: at(5_300), itemCount: 2, visibleItemCount: 2 })),
       ]);
       expect(sent).toEqual([1, 3, 5, 6]);

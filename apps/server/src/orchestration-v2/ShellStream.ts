@@ -196,7 +196,7 @@ export function shellStreamItemsFromResumeSnapshot(input: {
 const sameThreadShell = Schema.toEquivalence(ThreadShellSchema);
 
 /** How long an unchanged thread shell may go unsent on a live subscription. */
-export const UNCHANGED_THREAD_SHELL_RESEND_MS = 5_000;
+const UNCHANGED_THREAD_SHELL_RESEND_MS = 5_000;
 
 /**
  * Drop live `thread.updated` deltas whose shell matches the last one this
