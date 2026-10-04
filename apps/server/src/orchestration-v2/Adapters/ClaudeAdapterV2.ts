@@ -5033,16 +5033,21 @@ export function makeClaudeAdapterV2(
                 const clearConversationHead =
                   input.status === "completed" &&
                   input.context.input.providerThread.nativeConversationHeadRef !== null;
-                // Claude ends a turn on its own only after the goal's Stop hook
-                // passes. It defers that check while background work runs.
+                // While a goal is set, Claude ends a turn on its own only after the
+                // goal's Stop hook passes. It defers that check while background
+                // work runs, and a hook that stops the turn reports another reason.
+                // SDK mode does not report an evaluator timeout or an impossible
+                // verdict, so those still read as complete.
                 const goal =
                   nativeThreadId === null ? undefined : goalsByNativeThread.get(nativeThreadId);
                 const goalChecked = goalCheckedTurns.delete(input.context.providerTurnId);
+                const terminalReason = input.result?.terminal_reason;
                 if (
                   nativeThreadId !== null &&
                   goal?.status === "active" &&
                   goalChecked &&
                   input.status === "completed" &&
+                  (terminalReason === undefined || terminalReason === "completed") &&
                   roster.size === 0
                 ) {
                   goalsByNativeThread.set(nativeThreadId, {

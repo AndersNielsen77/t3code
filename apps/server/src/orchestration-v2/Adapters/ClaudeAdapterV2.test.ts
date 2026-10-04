@@ -7905,6 +7905,40 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       }).pipe(Effect.scoped, Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
     );
 
+    it.effect("keeps a goal active when a hook stops the turn before the goal passes", () =>
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarness;
+        const condition = "the deploy succeeds";
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("goal-hook-stop-attempt"),
+            text: `/goal ${condition}`,
+            attachments: [],
+          }),
+        );
+        for (const frame of [
+          syntheticFrame("goal-hook-set", `Goal set: ${condition}`),
+          makeAssistantTextFrame({ uuid: "goal-hook-work", text: "Deploying." }),
+          makeResultFrame({
+            uuid: "goal-hook-result",
+            result: "Deploying.",
+            terminalReason: "hook_stopped",
+          }),
+        ]) {
+          yield* Queue.offer(harness.sdkMessages, frame);
+        }
+        yield* Queue.take(harness.terminalReceipts);
+        assert.deepEqual(goalStatuses(harness.events).at(-1), {
+          objective: condition,
+          status: "active",
+          checks: 0,
+        });
+      }).pipe(Effect.scoped, Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+    );
+
     it.effect("keeps a goal active after a command turn with no model output", () =>
       Effect.gen(function* () {
         const harness = yield* makeWakeHarness;
