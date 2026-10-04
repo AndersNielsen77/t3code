@@ -1163,17 +1163,17 @@ export function extractMcpToolCallIdentity(
   const assertsForeignOrigin =
     (metaServerId.length > 0 && !/^t3[-_ ]?code$/i.test(metaServerId)) ||
     (gooseExtension.length > 0 && !/^t3[-_ ]?code$/i.test(gooseExtension));
+  // A foreign origin never brands as T3. qwen's serverId marks a real MCP
+  // server, but goose reports its built-in extensions (developer__shell,
+  // edits) the same way as user MCP servers, so goose stays unclassified and
+  // keeps its command and file-change projections.
   if (assertsForeignOrigin) {
-    const server = metaServerId || gooseExtension;
-    const name =
-      metaToolName ||
-      (typeof gooseToolCall?.toolName === "string" ? gooseToolCall.toolName.trim() : "");
-    if (!name) return undefined;
-    const prefix = [`mcp__${server}__`, `mcp::${server}::`, `${server}__`].find((prefix) =>
-      name.startsWith(prefix),
+    if (metaServerId.length === 0 || metaToolName.length === 0) return undefined;
+    const prefix = [`mcp__${metaServerId}__`, `mcp::${metaServerId}::`].find((prefix) =>
+      metaToolName.startsWith(prefix),
     );
-    const tool = prefix === undefined ? name : name.slice(prefix.length);
-    return tool ? { server, tool } : undefined;
+    const tool = prefix === undefined ? metaToolName : metaToolName.slice(prefix.length);
+    return tool ? { server: metaServerId, tool } : undefined;
   }
   const candidates = [
     meta?.toolName,

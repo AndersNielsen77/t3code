@@ -1540,11 +1540,6 @@ describe("extractMcpToolCallIdentity", () => {
   });
 
   it.each([
-    {
-      _meta: {
-        goose: { toolCall: { toolName: "weather__get_weather", extensionName: "weather" } },
-      },
-    },
     { _meta: { claudeCode: { toolName: "mcp__weather__get_weather" } } },
     { _meta: { toolName: "mcp::weather::get_weather", serverId: "weather" } },
   ])("recovers external MCP identity from provider metadata", (metadata) => {
@@ -1560,6 +1555,26 @@ describe("extractMcpToolCallIdentity", () => {
       tool: "get_weather",
     });
   });
+
+  it.each([
+    { kind: "execute", toolName: "developer__shell", extensionName: "developer" },
+    { kind: "edit", toolName: "developer__edit", extensionName: "developer" },
+    { kind: "other", toolName: "weather__get_weather", extensionName: "weather" },
+  ] as const)(
+    "leaves goose $toolName unclassified so built-ins keep their projection",
+    ({ kind, toolName, extensionName }) => {
+      // goose tags built-in extensions exactly like user MCP servers.
+      const toolCall = toolCallFromUpdate({
+        sessionUpdate: "tool_call",
+        toolCallId: "goose-builtin",
+        kind,
+        title: "developer: shell",
+        status: "in_progress",
+        _meta: { goose: { toolCall: { toolName, extensionName } } },
+      });
+      expect(extractMcpToolCallIdentity(toolCall)).toBeUndefined();
+    },
+  );
 
   it("uses the asserted server instead of a misleading T3 title", () => {
     const toolCall = toolCallFromUpdate({
