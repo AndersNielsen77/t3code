@@ -5719,7 +5719,8 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
          * pause is in flight, so the target resolves after it: a held run
          * settles here and leaves only its retained work to stop, and a
          * continued run moves Stop to its newest turn. `goalTurns` lists the
-         * run's root turns, whose descendants Stop also reaches.
+         * run's root turns, seen before and after the pause, whose descendants
+         * Stop also reaches.
          */
         const resolveGoalStopTarget = Effect.fnUntraced(function* (
           turnInput: ProviderAdapterV2InterruptInput,
@@ -5730,6 +5731,16 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
           }
           goalStops.set(goalThreadId, (goalStops.get(goalThreadId) ?? 0) + 1);
           return yield* Effect.gen(function* () {
+            // The run can settle while the pause is in flight, which drops its record.
+            const requestedTurnId = latestGoalTurnId(turnInput.providerTurnId);
+            const heldBefore = goalHolds.get(goalThreadId)?.context;
+            const turnsBefore = [
+              ...(goalRuns.get(requestedTurnId) ?? []),
+              ...Array.from((yield* Ref.get(activeTurns)).values()).filter(
+                (context) => context.providerTurnId === requestedTurnId,
+              ),
+              ...(heldBefore?.providerTurnId === requestedTurnId ? [heldBefore] : []),
+            ];
             const activation = goalActivations.get(goalThreadId);
             if (activation !== undefined) activation.stopped = true;
             if (goalsByNativeThread.get(goalThreadId)?.status === "active") {
@@ -5749,17 +5760,21 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
             return yield* turnTerminalizationPermit.withPermits(1)(
               Effect.gen(function* () {
                 const providerTurnId = latestGoalTurnId(turnInput.providerTurnId);
-                const goalTurns: ReadonlyArray<ActiveCodexTurnContext> =
-                  goalRuns.get(providerTurnId) ?? [];
                 const hold = goalHolds.get(goalThreadId);
-                if (hold === undefined || hold.context.providerTurnId !== providerTurnId) {
-                  return { turnInput: { ...turnInput, providerTurnId }, goalTurns };
-                }
+                const held = hold !== undefined && hold.context.providerTurnId === providerTurnId;
+                const goalTurns: ReadonlyArray<ActiveCodexTurnContext> = Array.from(
+                  new Set([
+                    ...turnsBefore,
+                    ...(goalRuns.get(providerTurnId) ?? []),
+                    ...(held ? [hold.context] : []),
+                  ]),
+                );
+                if (!held) return { turnInput: { ...turnInput, providerTurnId }, goalTurns };
                 goalHolds.delete(goalThreadId);
                 yield* settleGoalHold(hold, "interrupted");
                 return {
                   turnInput: { ...turnInput, providerTurnId, requestRuntimeRestart: true },
-                  goalTurns: goalTurns.length > 0 ? goalTurns : [hold.context],
+                  goalTurns,
                 };
               }),
             );
