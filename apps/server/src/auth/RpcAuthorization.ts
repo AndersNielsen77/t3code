@@ -1,5 +1,6 @@
 import {
   type DeviceListInput,
+  AssetCreateUrlInput,
   GitPreparePullRequestThreadInput,
   AuthAccessReadScope,
   ServerSettingsPatch,
@@ -251,6 +252,16 @@ const requiredScopesForRpcCall = (
   method: string,
   payload: unknown,
 ): ReadonlyArray<AuthEnvironmentScope> => {
+  if (method === WS_METHODS.assetsCreateUrl) {
+    const { resource } = Schema.decodeUnknownSync(AssetCreateUrlInput)(payload);
+    return [
+      resource._tag === "workspace-file" ||
+      resource._tag === "media-file" ||
+      resource._tag === "draft-workspace-file"
+        ? AuthFilesystemReadScope
+        : AuthOrchestrationReadScope,
+    ];
+  }
   if (method === WS_METHODS.serverUpdateSettings) return requiredScopesForSettingsUpdate(payload);
   if (method === WS_METHODS.gitPreparePullRequestThread) {
     const input = Schema.decodeUnknownSync(GitPreparePullRequestThreadInput)(payload);
