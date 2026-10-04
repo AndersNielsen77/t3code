@@ -32,7 +32,7 @@ import {
 import * as Persistence from "../platform/persistence.ts";
 import * as EnvironmentRegistry from "./registry.ts";
 import { orchestrationProtocolCompatibilityError } from "./compatibility.ts";
-import { connectionRoutes, routeEntry } from "./routes.ts";
+import { connectionRoutes, routeEntry, sshTargetKey } from "./routes.ts";
 
 export interface PairingConnectionInput {
   readonly pairingUrl?: string;
@@ -260,10 +260,9 @@ export const prepareSshRegistration = Effect.fn(
 )(function* (input: SshConnectionInput) {
   const gateway = yield* ClientCapabilities.SshEnvironmentGateway;
   const provisioned = yield* gateway.provision(input.target, input.expectedEnvironmentId);
-  // One id per SSH host, so a second host for the same machine adds a route
-  // instead of replacing the first.
-  const host = provisioned.bootstrap.target;
-  const connectionId = `ssh:${provisioned.environmentId}:${host.username ?? ""}@${host.hostname}:${host.port ?? 22}`;
+  // One id per SSH target, so a second host or alias for the same machine
+  // adds a route instead of replacing the first.
+  const connectionId = `ssh:${provisioned.environmentId}:${sshTargetKey(provisioned.bootstrap.target)}`;
   const label = input.label?.trim() || provisioned.label || provisioned.bootstrap.target.alias;
 
   return new SshConnectionRegistration({

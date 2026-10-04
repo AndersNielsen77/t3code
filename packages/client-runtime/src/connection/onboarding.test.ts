@@ -340,12 +340,12 @@ describe("connection onboarding", () => {
         target: {
           environmentId: "environment-ssh",
           label: "Remote development box",
-          connectionId: "ssh:environment-ssh:developer@devbox.example.test:22",
+          connectionId: 'ssh:environment-ssh:["devbox","devbox.example.test","developer",22]',
         },
         profile: {
           environmentId: "environment-ssh",
           label: "Remote development box",
-          connectionId: "ssh:environment-ssh:developer@devbox.example.test:22",
+          connectionId: 'ssh:environment-ssh:["devbox","devbox.example.test","developer",22]',
           target,
         },
       });

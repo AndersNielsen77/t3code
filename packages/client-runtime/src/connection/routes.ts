@@ -3,6 +3,7 @@ import {
   isPrivateNetworkHost,
   isTailnetHost,
 } from "@t3tools/shared/hostClassification";
+import type { DesktopSshEnvironmentTarget } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 
 import type { ConnectionCatalogEntry, ConnectionRoute } from "./catalog.ts";
@@ -137,8 +138,9 @@ export function upsertRoute(
 
 /**
  * A saved route that reaches the same address as `route`: the same bearer
- * URL, or the same SSH host. Registering it again replaces that route, even
- * when it was saved under another id.
+ * URL, or the same SSH target (alias, host, user, and port, as desktop keys
+ * its tunnels). Registering it again replaces that route, even when it was
+ * saved under another id.
  */
 export function findRouteToSameAddress(
   routes: ReadonlyArray<ConnectionRoute>,
@@ -154,7 +156,7 @@ function routeAddressKey(route: ConnectionRoute): string | null {
     case "BearerConnectionProfile":
       return `bearer:${profile.httpBaseUrl.replace(/\/+$/, "")}`;
     case "SshConnectionProfile":
-      return `ssh:${profile.target.username ?? ""}@${profile.target.hostname}:${profile.target.port ?? 22}`;
+      return `ssh:${sshTargetKey(profile.target)}`;
     default:
       return null;
   }
@@ -198,4 +200,9 @@ export function hasRelayRoute(
   return [entry.target, ...(entry.alternateRoutes ?? []).map((route) => route.target)].some(
     (target) => target._tag === "RelayConnectionTarget",
   );
+}
+
+/** One SSH target, as desktop keys its tunnels: alias, host, user, and port. */
+export function sshTargetKey(target: DesktopSshEnvironmentTarget): string {
+  return JSON.stringify([target.alias, target.hostname, target.username, target.port]);
 }
