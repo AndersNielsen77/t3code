@@ -69,10 +69,15 @@ export class ConnectionDriver extends Context.Service<
  * Connects over the first route, in preference order, that is worth trying.
  * Every route is checked at once, but a route only waits for its own check,
  * so a reachable LAN address connects without waiting on a silent tailnet
- * one. A silent route is skipped so a LAN address from another network costs
- * one short check, not a connection timeout. A route that fails to connect
- * moves on to the next: a signed-out T3 Connect must not hide a working LAN.
- * If every route was silent, each is tried anyway, since a check is not proof.
+ * one. A silent route is skipped on the first pass so a LAN address from
+ * another network costs one short check, not a connection timeout. A route
+ * that fails to connect moves on to the next: a signed-out T3 Connect must
+ * not hide a working LAN. Silent routes are tried last, since a check is not
+ * proof.
+ *
+ * The reported error is a transient one when any route failed transiently,
+ * so the supervisor keeps retrying a route that may come back; a blocked
+ * error is reported only when every attempted route was blocked.
  */
 export const connectOverRoutes = Effect.fn("ConnectionDriver.connectOverRoutes")(function* <R>(
   entry: ConnectionCatalogEntry,
@@ -87,38 +92,47 @@ export const connectOverRoutes = Effect.fn("ConnectionDriver.connectOverRoutes")
       ? []
       : yield* Effect.forEach(routes, (route) => Effect.forkChild(checkRoute(route)));
   const attemptScope = yield* Scope.Scope;
-  let lastError: ConnectionAttemptError = new ConnectionTransientError({
-    reason: "endpoint-unavailable",
-    detail: `${entry.target.label} did not answer on any saved route.`,
-  });
+  let transient: ConnectionAttemptError | undefined;
+  let blocked: ConnectionAttemptError | undefined;
   // Each route gets its own scope so a half-open session closes before the next try.
   const attempt = Effect.fnUntraced(function* (route: ConnectionRoute) {
     const routeScope = yield* Scope.fork(attemptScope);
-    return yield* connectRoute(route).pipe(
+    const result = yield* connectRoute(route).pipe(
       Scope.provide(routeScope),
       Effect.onExit((exit) => (Exit.isSuccess(exit) ? Effect.void : Scope.close(routeScope, exit))),
       Effect.result,
     );
+    if (result._tag === "Failure") {
+      if (result.failure._tag === "ConnectionTransientError") transient ??= result.failure;
+      else blocked ??= result.failure;
+    }
+    return result;
   });
-  let tried = 0;
+  const silent: Array<ConnectionRoute> = [];
   for (const [index, route] of routes.entries()) {
     const check = checks.length === 0 ? "unchecked" : yield* Fiber.join(checks[index]!);
-    if (check === "silent") continue;
-    tried += 1;
+    if (check === "silent") {
+      silent.push(route);
+      continue;
+    }
     const result = yield* attempt(route);
     if (result._tag === "Success") return result.success;
-    lastError = result.failure;
     // An incompatible server is the same server on every route.
-    if (lastError.reason === "unsupported") return yield* lastError;
+    if (result.failure.reason === "unsupported") return yield* result.failure;
   }
-  if (tried > 0) return yield* lastError;
-  for (const route of routes) {
+  for (const route of silent) {
     const result = yield* attempt(route);
     if (result._tag === "Success") return result.success;
-    lastError = result.failure;
-    if (lastError.reason === "unsupported") break;
+    if (result.failure.reason === "unsupported") return yield* result.failure;
   }
-  return yield* lastError;
+  return yield* (
+    transient ??
+      blocked ??
+      new ConnectionTransientError({
+        reason: "endpoint-unavailable",
+        detail: `${entry.target.label} did not answer on any saved route.`,
+      })
+  );
 });
 
 /** @public Service construction is part of the canonical Effect module API. */

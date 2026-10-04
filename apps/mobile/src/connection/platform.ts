@@ -91,14 +91,31 @@ const connectivityLayer = Connectivity.layer({
 const networkPathChanges = Stream.callback<"network-changed">((queue) =>
   Effect.acquireRelease(
     Effect.sync(() => {
+      let active = true;
       let previous: Network.NetworkStateType | undefined;
-      return Network.addNetworkStateListener((state) => {
+      const record = (state: Network.NetworkState) => {
         const type = state.isConnected === true ? state.type : undefined;
         if (previous !== undefined && type !== undefined && type !== previous) {
           Queue.offerUnsafe(queue, "network-changed");
         }
         previous = type ?? previous;
-      });
+      };
+      // The listener reports changes only, so seed the current type; without
+      // it the first Wi-Fi to cellular move would go unnoticed.
+      void Network.getNetworkStateAsync()
+        .then((state) => {
+          if (active && previous === undefined && state.isConnected === true) {
+            previous = state.type;
+          }
+        })
+        .catch(() => undefined);
+      const subscription = Network.addNetworkStateListener(record);
+      return {
+        remove: () => {
+          active = false;
+          subscription.remove();
+        },
+      };
     }),
     (subscription) => Effect.sync(() => subscription.remove()),
   ).pipe(Effect.asVoid),

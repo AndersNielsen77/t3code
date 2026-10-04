@@ -768,53 +768,55 @@ export const make = Effect.gen(function* () {
     yield* Effect.forEach(platformRegistrations, installPlatformRegistration, { discard: true });
   });
 
-  const remove = Effect.fn("EnvironmentRegistry.remove")(function* (environmentId: EnvironmentId) {
-    return yield* withLeaseLock(
-      environmentId,
-      Effect.gen(function* () {
-        if ((yield* Ref.get(platformEnvironmentIds)).has(environmentId)) {
-          return yield* new PlatformEnvironmentRemovalError({
-            environmentId,
-          });
-        }
-        const entry = yield* getEntry(environmentId);
+  /** Forgets a user-saved environment. Callers hold its lease lock. */
+  const removeLocked = Effect.fn("EnvironmentRegistry.removeLocked")(function* (
+    environmentId: EnvironmentId,
+  ) {
+    if ((yield* Ref.get(platformEnvironmentIds)).has(environmentId)) {
+      return yield* new PlatformEnvironmentRemovalError({
+        environmentId,
+      });
+    }
+    const entry = yield* getEntry(environmentId);
 
-        yield* githubRoutingPermissions.forget(environmentId);
-        yield* registrations.remove(environmentId);
-        yield* Ref.update(persistedEnvironmentIds, (current) => {
-          const next = new Set(current);
-          next.delete(environmentId);
-          return next;
-        });
-        yield* closeServiceScope(environmentId);
-        yield* SubscriptionRef.update(entries, (current) => {
-          const next = new Map(current);
-          next.delete(environmentId);
-          return next;
-        });
-        yield* Effect.all(
-          [
-            cache.clear(environmentId).pipe(
-              Effect.catch((error) =>
-                Effect.logWarning("Could not clear cached environment data after removal.", {
-                  environmentId,
-                  error,
-                }),
-              ),
-            ),
-            ownedDataCleanup.clear(environmentId),
-          ],
-          { concurrency: "unbounded", discard: true },
-        );
-
-        for (const route of connectionRoutes(entry)) {
-          const profile = Option.getOrNull(route.profile);
-          if (profile !== null && isSshConnectionProfile(profile)) {
-            yield* disconnectSsh(environmentId, profile);
-          }
-        }
-      }),
+    yield* githubRoutingPermissions.forget(environmentId);
+    yield* registrations.remove(environmentId);
+    yield* Ref.update(persistedEnvironmentIds, (current) => {
+      const next = new Set(current);
+      next.delete(environmentId);
+      return next;
+    });
+    yield* closeServiceScope(environmentId);
+    yield* SubscriptionRef.update(entries, (current) => {
+      const next = new Map(current);
+      next.delete(environmentId);
+      return next;
+    });
+    yield* Effect.all(
+      [
+        cache.clear(environmentId).pipe(
+          Effect.catch((error) =>
+            Effect.logWarning("Could not clear cached environment data after removal.", {
+              environmentId,
+              error,
+            }),
+          ),
+        ),
+        ownedDataCleanup.clear(environmentId),
+      ],
+      { concurrency: "unbounded", discard: true },
     );
+
+    for (const route of connectionRoutes(entry)) {
+      const profile = Option.getOrNull(route.profile);
+      if (profile !== null && isSshConnectionProfile(profile)) {
+        yield* disconnectSsh(environmentId, profile);
+      }
+    }
+  });
+
+  const remove = Effect.fn("EnvironmentRegistry.remove")(function* (environmentId: EnvironmentId) {
+    return yield* withLeaseLock(environmentId, removeLocked(environmentId));
   });
 
   const disconnectSsh = (environmentId: EnvironmentId, profile: SshConnectionProfile) =>
@@ -832,24 +834,24 @@ export const make = Effect.gen(function* () {
     environmentId: EnvironmentId,
     routeId: string,
   ) {
-    const removed = yield* withLeaseLock(
+    // One lock for the whole decision: a route registered between "this was
+    // the last route" and the removal must not be deleted with it.
+    yield* withLeaseLock(
       environmentId,
       Effect.gen(function* () {
         const entry = yield* userEntry(environmentId);
         const routes = connectionRoutes(entry);
         const route = routes.find((candidate) => connectionRouteId(candidate.target) === routeId);
-        if (route === undefined) return "kept" as const;
+        if (route === undefined) return;
         const remaining = routes.filter((candidate) => candidate !== route);
-        if (remaining.length === 0) return "last" as const;
+        if (remaining.length === 0) return yield* removeLocked(environmentId);
         yield* replaceRoutesLocked(entry, remaining);
         const profile = Option.getOrNull(route.profile);
         if (profile !== null && isSshConnectionProfile(profile)) {
           yield* disconnectSsh(environmentId, profile);
         }
-        return "kept" as const;
       }),
     );
-    if (removed === "last") yield* remove(environmentId);
   });
 
   const reorderRoutes = Effect.fn("EnvironmentRegistry.reorderRoutes")(function* (

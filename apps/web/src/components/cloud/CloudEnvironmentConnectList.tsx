@@ -196,10 +196,14 @@ export function CloudEnvironmentConnectRows({
     return false;
   };
 
+  // During onboarding selection a machine saved over another route already
+  // has its own row elsewhere, and selecting it must not add a T3 Connect
+  // route as a side effect, so it is left out here.
   const visibleEnvironments = [...environmentsState.environments.values()].filter(
     ({ environment }) =>
       environment.environmentId !== primaryEnvironmentId &&
-      (showSavedEnvironments || !savedById.has(environment.environmentId)),
+      (showSavedEnvironments || !savedById.has(environment.environmentId)) &&
+      !(selection && savedWithoutRelay.has(environment.environmentId)),
   );
   const selectNewComputers = useEffectEvent(() => {
     const seen = selection?.autoSelectedComputers;
@@ -218,9 +222,7 @@ export function CloudEnvironmentConnectRows({
       if (seen.has(id)) continue;
       seen.add(id);
       selection.onChange(id, true);
-      // A machine saved over another route already connects; adding T3 Connect
-      // as its fallback is the user's call, from Settings.
-      if (!savedById.has(id) && !savedWithoutRelay.has(id)) {
+      if (!savedById.has(id)) {
         void connectEnvironment(environment).then((connected) => {
           if (!connected) selection.onChange(id, false);
         });

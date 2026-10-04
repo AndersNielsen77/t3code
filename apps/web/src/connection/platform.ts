@@ -92,9 +92,11 @@ interface NetworkInformationLike extends EventTarget {
 }
 
 /**
- * Wakes connections when the browser reports a different network path, such
- * as a laptop moving from Wi-Fi to a phone hotspot. Only some browsers expose
- * `navigator.connection`; elsewhere the periodic route check covers it.
+ * Wakes connections when the browser reports a different network type, such
+ * as a laptop moving from Wi-Fi to a phone hotspot. `change` also fires for
+ * bandwidth and latency estimates on the same network, so only a type change
+ * counts. Browsers without `navigator.connection.type` rely on the periodic
+ * route check instead.
  */
 const networkPathChanges = Stream.callback<"network-changed">((queue) =>
   Effect.acquireRelease(
@@ -103,8 +105,14 @@ const networkPathChanges = Stream.callback<"network-changed">((queue) =>
         typeof navigator === "undefined"
           ? undefined
           : (navigator as Navigator & { readonly connection?: NetworkInformationLike }).connection;
-      if (connection === undefined) return undefined;
-      const listener = () => Queue.offerUnsafe(queue, "network-changed");
+      if (connection?.type === undefined) return undefined;
+      let previous = connection.type;
+      const listener = () => {
+        const type = connection.type;
+        if (type === undefined || type === previous) return;
+        previous = type;
+        Queue.offerUnsafe(queue, "network-changed");
+      };
       connection.addEventListener("change", listener);
       return { connection, listener };
     }),

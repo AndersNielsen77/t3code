@@ -26,7 +26,7 @@ import { isLegacyUpdateHandoffLoss, resolveServerUpdateProgressResult } from "..
 import * as RelayEnvironmentDiscovery from "../relay/discovery.ts";
 import * as ConnectionResolver from "./resolver.ts";
 import * as EnvironmentRegistry from "./registry.ts";
-import { connectionRoutes, hasRelayRoute, routeEntry } from "./routes.ts";
+import { connectionRoutes, hasRelayRoute, routeEntry, routeHttpBaseUrl } from "./routes.ts";
 
 // A v1 host restarting into v2 runs migrations before its descriptor answers again.
 const OUTDATED_HOST_RESTART_TIMEOUT = Duration.minutes(4);
@@ -159,9 +159,23 @@ export const updateOutdatedHost = Effect.fn("clientRuntime.connection.updateOutd
     );
 
     yield* onStage("resuming");
-    const resumed = yield* fetchRemoteEnvironmentDescriptor({
-      httpBaseUrl: prepared.httpBaseUrl,
-    }).pipe(
+    // The restarted host may answer on another saved route, so each poll asks
+    // every direct address, the one that carried the update first.
+    const pollUrls = [
+      prepared.httpBaseUrl,
+      ...connectionRoutes(entry).flatMap((route) => routeHttpBaseUrl(route) ?? []),
+    ].filter((url, index, all) => all.indexOf(url) === index);
+    const resumed = yield* Effect.firstSuccessOf(
+      pollUrls.map((httpBaseUrl) =>
+        fetchRemoteEnvironmentDescriptor({ httpBaseUrl }).pipe(
+          Effect.filterOrFail(
+            (descriptor) =>
+              descriptor.environmentId === environmentId && isCompatibleDescriptor(descriptor),
+            () => "not-ready" as const,
+          ),
+        ),
+      ),
+    ).pipe(
       Effect.provideService(HttpClient.HttpClient, httpClient),
       Effect.option,
       Effect.repeat({

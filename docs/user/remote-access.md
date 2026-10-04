@@ -70,8 +70,8 @@ T3 Connect list, and the new route joins the existing one instead of adding a
 second machine. Faster routes go first: LAN, then Tailscale, then T3 Connect.
 
 T3 Code connects over the first route that answers. Away from home, a LAN
-address that does not answer costs one short check before the next route is
-used. While connected over a later route, T3 Code checks the earlier ones when
+address that does not answer is checked briefly and skipped. It is only tried
+again, after the other routes, if none of them connect. While connected over a later route, T3 Code checks the earlier ones when
 your network changes, when you return to the app, and every minute, and moves
 back as soon as one works.
 

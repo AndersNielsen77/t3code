@@ -74,6 +74,14 @@ export function EnvironmentRoutesSection({
           <Pressable
             key={id}
             accessibilityRole="button"
+            accessibilityLabel={[
+              connectionRouteLabel(route),
+              address,
+              id === activeRouteId ? "In use" : null,
+              `Route ${index + 1} of ${routes.length}`,
+            ]
+              .filter((part) => part !== null)
+              .join(", ")}
             accessibilityHint="Shows options for this route"
             onPress={() => openActions(index)}
             className="flex-row items-center gap-3 p-4 active:opacity-70"
