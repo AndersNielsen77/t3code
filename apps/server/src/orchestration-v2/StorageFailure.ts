@@ -18,11 +18,19 @@ export function isStorageFullError(error: unknown): boolean {
     if (typeof current !== "object") continue;
     try {
       if (Cause.isCause(current)) {
-        pending.push(Cause.squash(current));
+        for (const reason of current.reasons.slice(0, remaining)) {
+          if (Cause.isFailReason(reason)) pending.push(reason.error);
+          else if (Cause.isDieReason(reason)) pending.push(reason.defect);
+        }
         continue;
       }
       const value = current as Record<string, unknown>;
-      if (value.code === "ENOSPC" || value.code === "SQLITE_FULL") return true;
+      if (
+        value.code === "ENOSPC" ||
+        value.code === "SQLITE_FULL" ||
+        (value.code === "ERR_SQLITE_ERROR" && value.errcode === 13)
+      )
+        return true;
       pending.push(value.cause, value.reason, value.message);
     } catch {
       continue;

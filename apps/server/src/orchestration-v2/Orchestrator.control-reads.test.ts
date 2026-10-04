@@ -91,6 +91,9 @@ it.effect.each(["missing-session", "returned-interrupt", "superseded-attempt"] a
           nativeThreadRef: null,
           nativeConversationHeadRef: null,
           status: "active",
+          pendingBackgroundTasks: [
+            { kind: "background_task", taskId: "stalled-task", description: "Background task" },
+          ],
           firstRunOrdinal: 1,
           lastRunOrdinal: 1,
           handoffIds: [],
@@ -207,6 +210,57 @@ it.effect.each(["missing-session", "returned-interrupt", "superseded-attempt"] a
           input: "test",
         },
       });
+      const assistantMessageId = MessageId.make(`${scenario}:assistant`);
+      yield* projections.apply({
+        id: EventId.make(`${scenario}:message`),
+        type: "message.updated",
+        threadId,
+        runId,
+        occurredAt: now,
+        payload: {
+          id: assistantMessageId,
+          threadId,
+          runId,
+          nodeId,
+          role: "assistant",
+          text: "Partial output",
+          attachments: [],
+          streaming: true,
+          createdBy: "agent",
+          creationSource: "provider",
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      for (const type of ["assistant_message", "reasoning"] as const) {
+        yield* projections.apply({
+          id: EventId.make(`${scenario}:${type}`),
+          type: "turn-item.updated",
+          threadId,
+          runId,
+          occurredAt: now,
+          payload: {
+            id: TurnItemId.make(`${scenario}:${type}`),
+            threadId,
+            runId,
+            nodeId,
+            providerThreadId,
+            providerTurnId,
+            nativeItemRef: null,
+            parentItemId: null,
+            ordinal: type === "assistant_message" ? 2 : 3,
+            status: "running",
+            title: "Partial output",
+            startedAt: now,
+            completedAt: null,
+            updatedAt: now,
+            type,
+            messageId: assistantMessageId,
+            text: "Partial output",
+            streaming: true,
+          },
+        });
+      }
       yield* projections.apply({
         id: EventId.make(`${scenario}:request`),
         type: "runtime-request.updated",
@@ -258,6 +312,16 @@ it.effect.each(["missing-session", "returned-interrupt", "superseded-attempt"] a
       assert.equal(after.attempts[0]?.status, interrupted ? "interrupted" : "running");
       assert.equal(after.providerTurns[0]?.status, interrupted ? "interrupted" : "running");
       assert.equal(after.nodes[0]?.status, interrupted ? "interrupted" : "running");
+      assert.equal(after.providerThreads[0]?.status, interrupted ? "idle" : "active");
+      assert.lengthOf(after.providerThreads[0]?.pendingBackgroundTasks ?? [], interrupted ? 0 : 1);
+      assert.equal(after.messages[0]?.streaming, !interrupted);
+      assert.equal(after.messages[0]?.text, "Partial output");
+      for (const item of after.turnItems) {
+        if (item.type !== "assistant_message" && item.type !== "reasoning") continue;
+        assert.equal(item.status, interrupted ? "interrupted" : "running");
+        assert.equal(item.streaming, !interrupted);
+        assert.equal(item.text, "Partial output");
+      }
       assert.equal(
         after.turnItems.find((item) => item.type === "command_execution")?.status,
         interrupted ? "interrupted" : "running",
