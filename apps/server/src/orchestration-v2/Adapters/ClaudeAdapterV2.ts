@@ -1025,7 +1025,7 @@ const CLAUDE_GOAL_ACTIVE = /^Goal active: ([\s\S]+?) \((?:not yet evaluated|(\d+
  * The goal after one root SDK frame, or undefined when the frame says nothing
  * about it. Completion has no frame of its own; see finalizeActiveTurn.
  */
-export function nextClaudeGoal(
+function nextClaudeGoal(
   current: OrchestrationV2ProviderGoal | null,
   message: SDKMessage,
 ): OrchestrationV2ProviderGoal | null | undefined {

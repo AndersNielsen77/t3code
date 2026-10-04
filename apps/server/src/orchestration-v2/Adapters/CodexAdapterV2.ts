@@ -899,7 +899,7 @@ const CODEX_GOAL_STATUSES = {
   complete: "complete",
 } as const satisfies Record<CodexThreadGoal["status"], OrchestrationV2ProviderGoal["status"]>;
 
-export function providerGoalFromCodex(goal: CodexThreadGoal): OrchestrationV2ProviderGoal | null {
+function providerGoalFromCodex(goal: CodexThreadGoal): OrchestrationV2ProviderGoal | null {
   const objective = goal.objective.trim();
   if (objective.length === 0) return null;
   return {
@@ -4066,6 +4066,9 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
               yield* client
                 .request("thread/goal/set", { threadId: payload.threadId, status: "paused" })
                 .pipe(
+                  Effect.catch((cause) =>
+                    Effect.logWarning("orchestration-v2.codex-goal-pause-failed", { cause }),
+                  ),
                   Effect.andThen(
                     client.request("turn/interrupt", {
                       threadId: payload.threadId,
