@@ -12,12 +12,12 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { setTimeout as waitForNativeTimer } from "node:timers/promises";
+import * as NodeTimersPromises from "node:timers/promises";
 
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 
-const waitForTerminalPoll = Effect.promise(() => waitForNativeTimer(10));
+const waitForTerminalPoll = Effect.promise(() => NodeTimersPromises.setTimeout(10));
 
 export class ProviderTurnControlError extends Schema.TaggedError<ProviderTurnControlError>()(
   "ProviderTurnControlError",
