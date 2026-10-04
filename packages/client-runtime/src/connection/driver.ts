@@ -39,7 +39,7 @@ export interface EnvironmentConnectionLease {
 export type RouteCheck = "answered" | "silent" | "unchecked";
 
 /** How long a direct route has to answer before it counts as unreachable from here. */
-export const ROUTE_CHECK_TIMEOUT_MS = 2_500;
+const ROUTE_CHECK_TIMEOUT_MS = 2_500;
 
 export class ConnectionDriver extends Context.Service<
   ConnectionDriver,

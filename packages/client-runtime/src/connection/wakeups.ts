@@ -11,7 +11,7 @@ export type ConnectionWakeup =
   // cellular) while staying online. Saved routes may have changed reach.
   | "network-changed";
 
-export function isApplicationActiveWakeup(reason: ConnectionWakeup): boolean {
+function isApplicationActiveWakeup(reason: ConnectionWakeup): boolean {
   return (
     reason === "application-active" ||
     reason === "application-active-probe" ||
