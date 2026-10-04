@@ -7203,11 +7203,12 @@ export default function ChatView(props: ChatViewProps) {
       variant: "default",
       priority: "activity",
       icon: <TargetIcon />,
-      title: presentation.title,
-      description:
+      // Usage stays in the title so a long objective cannot clip it.
+      title:
         presentation.usage === null
-          ? presentation.objective
-          : `${presentation.objective} · ${presentation.usage}`,
+          ? presentation.title
+          : `${presentation.title} · ${presentation.usage}`,
+      description: presentation.objective,
       actions: isWorking ? undefined : (
         <>
           {presentation.canResume ? (

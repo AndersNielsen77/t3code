@@ -7422,7 +7422,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       }).pipe(Effect.scoped, Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
     );
 
-    it.effect("settles /goal pause with a notice instead of a native turn", () =>
+    it.effect("settles /goal pause with a reply instead of a native turn", () =>
       Effect.gen(function* () {
         const transcript = makeCodexReplayTranscript({
           scenario: "goal-pause",
@@ -7456,8 +7456,8 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         assert.isTrue(turns.every((turn) => turn.nativeTurnRef === null));
         assert.include(
           harness.events.flatMap((event) =>
-            event.type === "turn_item.updated" && event.turnItem.type === "system_notice"
-              ? [event.turnItem.message]
+            event.type === "message.updated" && event.message.role === "assistant"
+              ? [event.message.text]
               : [],
           ),
           "Goal paused. Send /goal resume to continue.",

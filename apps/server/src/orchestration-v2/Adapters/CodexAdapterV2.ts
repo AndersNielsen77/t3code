@@ -5128,7 +5128,7 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
         );
 
         const emitRootTerminal = Effect.fnUntraced(function* (
-          context: Pick<ActiveCodexTurnContext, "input" | "providerThread">,
+          context: ActiveCodexTurnContext,
           event: CodexRootTerminalEvent,
         ) {
           const current =
@@ -5519,15 +5519,39 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
           }),
         );
 
-        /** Settles a `/goal` run that started no Codex turn, with a notice as its only item. */
+        /**
+         * Settles a `/goal` run that started no Codex turn. Its reply is plain
+         * assistant text, as Claude's own `/goal` output is.
+         */
         const completeGoalCommandTurn = Effect.fnUntraced(function* (
           turnInput: ProviderAdapterV2TurnInput,
-          notice: string,
+          reply: string,
         ) {
           const now = yield* DateTime.now;
           const nativeId = `goal-command:${turnInput.attemptId}`;
+          const context: ActiveCodexTurnContext = {
+            input: turnInput,
+            projectionAppThread: turnInput.appThread,
+            projectionThreadId: turnInput.threadId,
+            projectionRunId: turnInput.runId,
+            nativeTurnId: nativeId,
+            providerThread: turnInput.providerThread,
+            providerTurnId: idAllocator.derive.providerTurn({
+              driver: CODEX_PROVIDER,
+              nativeTurnId: nativeId,
+            }),
+            providerTurnOrdinal: turnInput.providerTurnOrdinal,
+            providerNodeId: turnInput.rootNodeId,
+            providerNodeKind: "root_turn",
+            providerNodeStartedAt: now,
+            itemParentNodeId: turnInput.rootNodeId,
+            rootNodeId: turnInput.rootNodeId,
+            subagent: null,
+            startedAt: now,
+            itemPositions: new Map(),
+          };
           const providerTurn = {
-            id: idAllocator.derive.providerTurn({ driver: CODEX_PROVIDER, nativeTurnId: nativeId }),
+            id: context.providerTurnId,
             providerThreadId: turnInput.providerThread.id,
             nodeId: turnInput.rootNodeId,
             runAttemptId: turnInput.attemptId,
@@ -5544,30 +5568,25 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
             providerTurn,
           });
           yield* rememberRootProviderThread(turnInput.providerThread);
+          const artifacts = yield* buildAgentMessageArtifacts(
+            context,
+            { id: nativeId, text: reply },
+            true,
+          );
+          yield* emitProviderEvent({
+            type: "node.updated",
+            driver: CODEX_PROVIDER,
+            node: artifacts.node,
+          });
+          yield* emitProviderEvent({
+            type: "message.updated",
+            driver: CODEX_PROVIDER,
+            message: artifacts.message,
+          });
           yield* emitProviderEvent({
             type: "turn_item.updated",
             driver: CODEX_PROVIDER,
-            turnItem: {
-              id: idAllocator.derive.turnItemFromProviderItem({
-                driver: CODEX_PROVIDER,
-                nativeItemId: nativeId,
-              }),
-              threadId: turnInput.threadId,
-              runId: turnInput.runId,
-              nodeId: turnInput.rootNodeId,
-              providerThreadId: turnInput.providerThread.id,
-              providerTurnId: providerTurn.id,
-              nativeItemRef: null,
-              parentItemId: null,
-              ordinal: turnInput.providerTurnOrdinal * 100 + 1,
-              type: "system_notice",
-              status: "completed",
-              title: null,
-              message: notice,
-              startedAt: now,
-              completedAt: now,
-              updatedAt: now,
-            },
+            turnItem: artifacts.turnItem,
           });
           yield* emitProviderEvent({
             type: "provider_turn.updated",
@@ -5575,19 +5594,16 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
             threadId: turnInput.threadId,
             providerTurn: { ...providerTurn, status: "completed", completedAt: now },
           });
-          yield* emitRootTerminal(
-            { input: turnInput, providerThread: turnInput.providerThread },
-            {
-              type: "turn.terminal",
-              driver: CODEX_PROVIDER,
-              providerThreadId: turnInput.providerThread.id,
-              providerTurnId: providerTurn.id,
-              runOrdinal: turnInput.runOrdinal,
-              status: "completed",
-              failure: null,
-              threadDisposition: "reusable",
-            },
-          );
+          yield* emitRootTerminal(context, {
+            type: "turn.terminal",
+            driver: CODEX_PROVIDER,
+            providerThreadId: turnInput.providerThread.id,
+            providerTurnId: context.providerTurnId,
+            runOrdinal: turnInput.runOrdinal,
+            status: "completed",
+            failure: null,
+            threadDisposition: "reusable",
+          });
         });
 
         /**
