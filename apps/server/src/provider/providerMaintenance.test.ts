@@ -8,7 +8,9 @@ import * as NodePath from "node:path";
 import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Crypto from "effect/Crypto";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { HttpClient } from "effect/unstable/http";
@@ -783,6 +785,34 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
       expect(resolutions).toBe(1);
       yield* resolve({ fresh: true });
       yield* resolve();
+      expect(resolutions).toBe(2);
+    }),
+  );
+
+  it.effect("resolves again after the first read is interrupted", () =>
+    Effect.gen(function* () {
+      const release = yield* Deferred.make<void>();
+      let resolutions = 0;
+      const resolve = yield* makeCachedProviderMaintenanceResolution(
+        Effect.suspend(() => {
+          resolutions += 1;
+          return resolutions === 1
+            ? Effect.never
+            : Deferred.await(release).pipe(Effect.as(manualPackageTool));
+        }),
+      );
+
+      const first = yield* Effect.forkChild(resolve(), { startImmediately: true });
+      yield* Fiber.interrupt(first);
+
+      // The next read resolves again, and a reader that joined it keeps it
+      // running when the reader that started it goes away.
+      const owner = yield* Effect.forkChild(resolve(), { startImmediately: true });
+      const waiter = yield* Effect.forkChild(resolve(), { startImmediately: true });
+      yield* Fiber.interrupt(owner);
+      yield* Deferred.succeed(release, undefined);
+      expect(yield* Fiber.join(waiter)).toEqual(manualPackageTool);
+      expect(yield* resolve()).toEqual(manualPackageTool);
       expect(resolutions).toBe(2);
     }),
   );

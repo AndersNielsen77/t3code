@@ -1,6 +1,7 @@
 import * as NodeModule from "node:module";
 import * as NodeNet from "node:net";
 
+import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -249,15 +250,20 @@ export const make = Effect.fn("NodePtyAdapter.make")(function* () {
       }),
   }).pipe(Effect.orDie);
 
-  const ensureNodePtySpawnHelperExecutableCached = yield* Effect.cached(
-    ensureNodePtySpawnHelperExecutable().pipe(
-      Effect.provideService(FileSystem.FileSystem, fs),
-      Effect.provideService(Path.Path, path),
-      Effect.provideService(HostProcessPlatform, platform),
-      Effect.provideService(HostProcessArchitecture, architecture),
-      Effect.orElseSucceed(() => undefined),
-    ),
-  );
+  // Runs once per adapter. `Cache` drops an interrupted run, so a spawn that is
+  // cancelled mid-check does not fail every later spawn.
+  const spawnHelperCheck = yield* Cache.make({
+    capacity: 1,
+    lookup: () =>
+      ensureNodePtySpawnHelperExecutable().pipe(
+        Effect.provideService(FileSystem.FileSystem, fs),
+        Effect.provideService(Path.Path, path),
+        Effect.provideService(HostProcessPlatform, platform),
+        Effect.provideService(HostProcessArchitecture, architecture),
+        Effect.orElseSucceed(() => undefined),
+      ),
+  });
+  const ensureNodePtySpawnHelperExecutableCached = Cache.get(spawnHelperCheck, undefined);
 
   return PtyAdapter.PtyAdapter.of({
     spawn: Effect.fn("NodePtyAdapter.spawn")(function* (input) {
