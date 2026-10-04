@@ -26,6 +26,7 @@ import {
   type DesktopBridge,
   type DesktopEnvironmentBootstrap,
   type DesktopSshEnvironmentTarget,
+  type EnvironmentId,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
@@ -181,7 +182,11 @@ function sshPreparationError(cause: unknown) {
 
 export const provisionDesktopSshEnvironment = Effect.fn(
   "web.connectionPlatform.ssh.provisionDesktop",
-)(function* (bridge: DesktopBridge, target: DesktopSshEnvironmentTarget) {
+)(function* (
+  bridge: DesktopBridge,
+  target: DesktopSshEnvironmentTarget,
+  expectedEnvironmentId?: EnvironmentId,
+) {
   const bootstrap = yield* Effect.tryPromise({
     try: () =>
       bridge.ensureSshEnvironment(target, {
@@ -200,6 +205,12 @@ export const provisionDesktopSshEnvironment = Effect.fn(
     try: () => bridge.fetchSshEnvironmentDescriptor(bootstrap.httpBaseUrl),
     catch: sshPreparationError,
   });
+  if (expectedEnvironmentId !== undefined && descriptor.environmentId !== expectedEnvironmentId) {
+    return yield* new ConnectionBlockedError({
+      reason: "configuration",
+      detail: `That host reaches ${descriptor.label}, a different machine. Add it as its own environment instead.`,
+    });
+  }
   const access = yield* Effect.tryPromise({
     try: () => bridge.bootstrapSshBearerSession(bootstrap.httpBaseUrl, pairingToken),
     catch: sshPreparationError,
@@ -262,16 +273,18 @@ const capabilitiesLayer = Layer.effectContext(
       }).pipe(Effect.map(Option.fromNullishOr)),
     });
     const ssh = ClientCapabilities.SshEnvironmentGateway.of({
-      provision: Effect.fn("web.connectionPlatform.ssh.provision")(function* (target) {
-        const bridge = window.desktopBridge;
-        if (bridge === undefined) {
-          return yield* new ConnectionBlockedError({
-            reason: "unsupported",
-            detail: "SSH environments are only available in the desktop app.",
-          });
-        }
-        return yield* provisionDesktopSshEnvironment(bridge, target);
-      }),
+      provision: Effect.fn("web.connectionPlatform.ssh.provision")(
+        function* (target, expectedEnvironmentId) {
+          const bridge = window.desktopBridge;
+          if (bridge === undefined) {
+            return yield* new ConnectionBlockedError({
+              reason: "unsupported",
+              detail: "SSH environments are only available in the desktop app.",
+            });
+          }
+          return yield* provisionDesktopSshEnvironment(bridge, target, expectedEnvironmentId);
+        },
+      ),
       prepare: Effect.fn("web.connectionPlatform.ssh.prepare")(function* (input) {
         const bridge = window.desktopBridge;
         if (bridge === undefined) {
