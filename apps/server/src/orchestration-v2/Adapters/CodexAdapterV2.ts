@@ -1146,8 +1146,6 @@ interface CodexGoalHold {
   readonly completedTurn: OrchestrationV2ProviderTurn;
   /** The turn Codex continued with, or undefined when the run settled instead. */
   readonly next: Deferred.Deferred<ActiveCodexTurnContext | undefined>;
-  /** Stop owns the hold; a paused goal must not settle it as completed. */
-  stopping: boolean;
 }
 
 interface DeferredCodexRootTerminal {
@@ -1791,19 +1789,18 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
         // A completed root turn whose goal is still active. Its run stays open
         // for the turn Codex starts next, so goal phases do not read as Done.
         const goalHolds = new Map<string, CodexGoalHold>();
-        // Held turns Codex continued from, so a Stop or steer that names an
-        // earlier turn of the goal run reaches the turn running now.
-        const goalTurnSuccessors = new Map<ProviderTurnId, ProviderTurnId>();
+        // The root turns of each continued goal run, keyed by each of its turns.
+        // A Stop or steer that names an earlier turn reaches the newest one, and
+        // Stop also reaches work an earlier turn left running. Dropped when the
+        // run settles.
+        const goalRuns = new Map<ProviderTurnId, Array<ActiveCodexTurnContext>>();
         // `/goal` runs whose goal turns active after the first turn starts.
         const goalActivations = new Map<string, { stopped: boolean }>();
-        const latestGoalTurnId = (providerTurnId: ProviderTurnId) => {
-          let latest = providerTurnId;
-          for (let next = goalTurnSuccessors.get(latest); next !== undefined;) {
-            latest = next;
-            next = goalTurnSuccessors.get(latest);
-          }
-          return latest;
-        };
+        // Stops in progress by native thread. Until a Stop resolves its target,
+        // a held run must not settle as completed.
+        const goalStops = new Map<string, number>();
+        const latestGoalTurnId = (providerTurnId: ProviderTurnId) =>
+          goalRuns.get(providerTurnId)?.at(-1)?.providerTurnId ?? providerTurnId;
 
         const emitProviderEvent = (event: ProviderAdapterV2Event) =>
           Queue.offer(events, event).pipe(Effect.asVoid);
@@ -4047,15 +4044,20 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
                 nativeTurnId: payload.turn.id,
                 startedAt: codexTimestamp(payload.turn.startedAt),
               });
-              goalTurnSuccessors.set(goalHold.context.providerTurnId, next.providerTurnId);
+              const goalRun = goalRuns.get(goalHold.context.providerTurnId) ?? [goalHold.context];
+              goalRun.push(next);
+              goalRuns.set(goalHold.context.providerTurnId, goalRun);
+              goalRuns.set(next.providerTurnId, goalRun);
               yield* Deferred.succeed(goalHold.next, next);
               return;
             }
             // A goal turn with no run to own it (Codex continued after the run
-            // settled): stop it and pause the goal rather than work out of sight.
+            // settled, or raced a Stop): stop it and pause the goal rather than
+            // work out of sight.
             if (
               rootProviderThreads.has(payload.threadId) &&
-              goalsByNativeThread.get(payload.threadId)?.status === "active"
+              (goalsByNativeThread.get(payload.threadId)?.status === "active" ||
+                goalStops.has(payload.threadId))
             ) {
               yield* Effect.logWarning("orchestration-v2.codex-goal-turn-without-run", {
                 nativeThreadId: payload.threadId,
@@ -5194,6 +5196,9 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
                 }
               : event;
           yield* emitProviderEvent(current);
+          for (const turn of goalRuns.get(context.providerTurnId) ?? []) {
+            goalRuns.delete(turn.providerTurnId);
+          }
           // Later goal updates must not mark the settled thread active again.
           const nativeThreadId = context.providerThread.nativeThreadRef?.nativeId;
           const rootProviderThread =
@@ -5253,7 +5258,6 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
                 event,
                 completedTurn: input.goalHoldTurn,
                 next: yield* Deferred.make<ActiveCodexTurnContext | undefined>(),
-                stopping: false,
               });
               yield* Effect.sleep(CODEX_GOAL_CONTINUATION_GRACE).pipe(
                 Effect.andThen(
@@ -5267,13 +5271,14 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
           },
         );
 
-        /** Settles a held goal run with its last turn. Call with the terminalization permit. */
+        /**
+         * Settles a held goal run with its last turn. Call with the
+         * terminalization permit, after removing the hold from `goalHolds`.
+         */
         const settleGoalHold = Effect.fnUntraced(function* (
-          nativeThreadId: string,
           hold: CodexGoalHold,
           status: "completed" | "interrupted",
         ) {
-          goalHolds.delete(nativeThreadId);
           yield* emitProviderEvent({
             type: "provider_turn.updated",
             driver: CODEX_PROVIDER,
@@ -5290,9 +5295,10 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
           expected?: CodexRootTerminalEvent,
         ) {
           const hold = goalHolds.get(nativeThreadId);
-          if (hold === undefined || hold.stopping) return;
+          if (hold === undefined || goalStops.has(nativeThreadId)) return;
           if (expected !== undefined && hold.event !== expected) return;
-          yield* settleGoalHold(nativeThreadId, hold, "completed");
+          goalHolds.delete(nativeThreadId);
+          yield* settleGoalHold(hold, "completed");
         });
 
         const flushReadyRootTerminals = Effect.fn("CodexAdapterV2.flushReadyRootTerminals")(
@@ -5709,42 +5715,63 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
 
         /**
          * Like the Codex TUI, Stop pauses an active goal first so Codex starts
-         * no further goal turn. Between goal turns no native turn runs: the held
-         * run settles here, then the normal path stops its retained background
-         * work. If Codex continued meanwhile, Stop moves to the new turn.
+         * no further goal turn. Codex can end or continue the turn while the
+         * pause is in flight, so the target resolves after it: a held run
+         * settles here and leaves only its retained work to stop, and a
+         * continued run moves Stop to its newest turn. `goalTurns` lists the
+         * run's root turns, whose descendants Stop also reaches.
          */
         const resolveGoalStopTarget = Effect.fnUntraced(function* (
           turnInput: ProviderAdapterV2InterruptInput,
         ) {
-          let providerTurnId = latestGoalTurnId(turnInput.providerTurnId);
-          const held = heldGoalTurn(turnInput.providerThread, providerTurnId);
-          if (held !== undefined) held.hold.stopping = true;
           const goalThreadId = turnInput.providerThread.nativeThreadRef?.nativeId;
-          const activation = goalThreadId == null ? undefined : goalActivations.get(goalThreadId);
-          if (activation !== undefined) activation.stopped = true;
-          if (goalThreadId != null && goalsByNativeThread.get(goalThreadId)?.status === "active") {
-            yield* client
-              .request("thread/goal/set", { threadId: goalThreadId, status: "paused" })
-              .pipe(
-                Effect.catch((cause) =>
-                  Effect.logWarning("orchestration-v2.codex-goal-pause-failed", { cause }),
-                ),
-              );
+          if (goalThreadId == null) {
+            return { turnInput, goalTurns: [] as ReadonlyArray<ActiveCodexTurnContext> };
           }
-          if (held === undefined) return { ...turnInput, providerTurnId };
-          const settled = yield* turnTerminalizationPermit.withPermits(1)(
-            Effect.gen(function* () {
-              if (goalHolds.get(held.nativeThreadId) !== held.hold) return false;
-              yield* settleGoalHold(held.nativeThreadId, held.hold, "interrupted");
-              return true;
-            }),
+          goalStops.set(goalThreadId, (goalStops.get(goalThreadId) ?? 0) + 1);
+          return yield* Effect.gen(function* () {
+            const activation = goalActivations.get(goalThreadId);
+            if (activation !== undefined) activation.stopped = true;
+            if (goalsByNativeThread.get(goalThreadId)?.status === "active") {
+              yield* client
+                .request("thread/goal/set", { threadId: goalThreadId, status: "paused" })
+                .pipe(
+                  Effect.tap(({ goal }) =>
+                    Effect.sync(() =>
+                      goalsByNativeThread.set(goalThreadId, providerGoalFromCodex(goal)),
+                    ),
+                  ),
+                  Effect.catch((cause) =>
+                    Effect.logWarning("orchestration-v2.codex-goal-pause-failed", { cause }),
+                  ),
+                );
+            }
+            return yield* turnTerminalizationPermit.withPermits(1)(
+              Effect.gen(function* () {
+                const providerTurnId = latestGoalTurnId(turnInput.providerTurnId);
+                const goalTurns: ReadonlyArray<ActiveCodexTurnContext> =
+                  goalRuns.get(providerTurnId) ?? [];
+                const hold = goalHolds.get(goalThreadId);
+                if (hold === undefined || hold.context.providerTurnId !== providerTurnId) {
+                  return { turnInput: { ...turnInput, providerTurnId }, goalTurns };
+                }
+                goalHolds.delete(goalThreadId);
+                yield* settleGoalHold(hold, "interrupted");
+                return {
+                  turnInput: { ...turnInput, providerTurnId, requestRuntimeRestart: true },
+                  goalTurns: goalTurns.length > 0 ? goalTurns : [hold.context],
+                };
+              }),
+            );
+          }).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                const stops = (goalStops.get(goalThreadId) ?? 1) - 1;
+                if (stops > 0) goalStops.set(goalThreadId, stops);
+                else goalStops.delete(goalThreadId);
+              }),
+            ),
           );
-          if (!settled) {
-            providerTurnId =
-              (yield* Deferred.await(held.hold.next))?.providerTurnId ?? providerTurnId;
-          }
-          // A settled turn is no longer active; only its retained work is left to stop.
-          return { ...turnInput, providerTurnId, requestRuntimeRestart: true };
         });
 
         /** Starts a native turn with this run's full turn configuration. */
@@ -6196,7 +6223,7 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
             ),
           interruptTurn: (requestedInput) =>
             Effect.gen(function* () {
-              const turnInput = yield* resolveGoalStopTarget(requestedInput);
+              const { turnInput, goalTurns } = yield* resolveGoalStopTarget(requestedInput);
               const [activeTurnContexts, settledTurnContexts] =
                 yield* turnTerminalizationPermit.withPermits(1)(
                   Effect.gen(function* () {
@@ -6215,7 +6242,29 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
                       (candidate) => candidate.providerThread.id === turnInput.providerThread.id,
                     )
                   : undefined);
-              if (activeTurn === undefined) {
+              // A goal run spans several root turns, and work an earlier one
+              // started can outlive it.
+              const lineageRoots = Array.from(
+                new Set([...(activeTurn === undefined ? [] : [activeTurn]), ...goalTurns]),
+              );
+              const inLineage = (context: ActiveCodexTurnContext) =>
+                lineageRoots.some(
+                  (root) => context === root || isDescendantCodexTurn(context, root),
+                );
+              const interruptTargetContexts = [
+                ...(activeTurn === undefined ? [] : [activeTurn]),
+                ...activeTurnContexts.filter(
+                  (candidate) => candidate !== activeTurn && inLineage(candidate),
+                ),
+                ...settledTurnContexts.filter(
+                  (candidate) =>
+                    candidate !== activeTurn &&
+                    ((turnInput.requestRuntimeRestart === true &&
+                      candidate.providerThread.id === turnInput.providerThread.id) ||
+                      inLineage(candidate)),
+                ),
+              ];
+              if (interruptTargetContexts.length === 0) {
                 // Stop on a settled turn this process retains nothing for
                 // (released, restarted, or every command already reported).
                 if (turnInput.requestRuntimeRestart === true) return;
@@ -6223,20 +6272,6 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
                   `Provider turn ${turnInput.providerTurnId} is not active and cannot be interrupted.`,
                 );
               }
-              const interruptTargetContexts = [
-                activeTurn,
-                ...activeTurnContexts.filter(
-                  (candidate) =>
-                    candidate !== activeTurn && isDescendantCodexTurn(candidate, activeTurn),
-                ),
-                ...settledTurnContexts.filter(
-                  (candidate) =>
-                    candidate !== activeTurn &&
-                    ((turnInput.requestRuntimeRestart === true &&
-                      candidate.providerThread.id === turnInput.providerThread.id) ||
-                      isDescendantCodexTurn(candidate, activeTurn)),
-                ),
-              ];
               const interruptTargets: Array<{
                 readonly context: ActiveCodexTurnContext;
                 readonly completion: Deferred.Deferred<void, never>;
@@ -6299,8 +6334,7 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
                   const activeLineage = yield* turnTerminalizationPermit.withPermits(1)(
                     Effect.gen(function* () {
                       const lineage = Array.from((yield* Ref.get(activeTurns)).values()).filter(
-                        (context) =>
-                          context === activeTurn || isDescendantCodexTurn(context, activeTurn),
+                        inLineage,
                       );
                       for (const context of lineage) {
                         if (trackedInterruptNativeTurnIds.has(context.nativeTurnId)) {
@@ -6377,8 +6411,8 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
                   Effect.gen(function* () {
                     const lineage = Array.from((yield* Ref.get(activeTurns)).values()).filter(
                       (context) =>
-                        context !== activeTurn &&
-                        isDescendantCodexTurn(context, activeTurn) &&
+                        !lineageRoots.includes(context) &&
+                        inLineage(context) &&
                         !trackedInterruptNativeTurnIds.has(context.nativeTurnId),
                     );
                     for (const context of lineage) {
