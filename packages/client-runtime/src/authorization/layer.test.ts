@@ -353,7 +353,7 @@ describe("RemoteEnvironmentAuthorization", () => {
       });
       const harness = yield* makeHarness({
         initialToken: cached,
-        responses: [websocketTicket("lan-ticket")],
+        responses: [Response.json(DESCRIPTOR), websocketTicket("lan-ticket")],
       });
 
       const authorized = yield* Effect.gen(function* () {
@@ -370,8 +370,42 @@ describe("RemoteEnvironmentAuthorization", () => {
       expect(authorized.httpBaseUrl).toBe("http://192.168.1.10:3773/");
       expect(authorized.socketUrl).toMatch(/^ws:\/\/192\.168\.1\.10:3773\/ws\?/);
       expect(yield* Ref.get(harness.bootstrapCalls)).toBe(0);
-      expect(String(harness.fetch.calls[0]?.[0])).toBe(
+      expect(harness.fetch.calls.map(([url]) => String(url))).toEqual([
+        "http://192.168.1.10:3773/.well-known/t3/environment",
         "http://192.168.1.10:3773/api/auth/websocket-ticket",
+      ]);
+    }),
+  );
+
+  it.effect("sends no token to a direct address that answers as another machine", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        initialToken: persistedToken({ accessToken: "cached-access-token" }),
+        responses: [
+          Response.json({ ...DESCRIPTOR, environmentId: EnvironmentId.make("someone-else") }),
+        ],
+      });
+
+      const error = yield* Effect.gen(function* () {
+        const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+        return yield* remote
+          .authorizeDpop({
+            expectedEnvironmentId: ENVIRONMENT_ID,
+            directEndpoint: {
+              httpBaseUrl: "http://192.168.1.10:3773/",
+              wsBaseUrl: "ws://192.168.1.10:3773/",
+            },
+          })
+          .pipe(Effect.flip);
+      }).pipe(Effect.provide(harness.layer));
+
+      expect(error).toMatchObject({ _tag: "ConnectionBlockedError", reason: "configuration" });
+      expect(harness.fetch.calls.map(([url]) => String(url))).toEqual([
+        "http://192.168.1.10:3773/.well-known/t3/environment",
+      ]);
+      // The token stays saved for the T3 Connect route.
+      expect((yield* Ref.get(harness.tokens)).get(ENVIRONMENT_ID)?.accessToken).toBe(
+        "cached-access-token",
       );
     }),
   );
@@ -390,6 +424,7 @@ describe("RemoteEnvironmentAuthorization", () => {
       const harness = yield* makeHarness({
         initialToken: cached,
         responses: [
+          Response.json(DESCRIPTOR),
           authInvalid(),
           Response.json(DESCRIPTOR),
           accessToken("replacement-access-token"),

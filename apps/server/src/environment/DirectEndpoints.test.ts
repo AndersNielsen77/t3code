@@ -78,6 +78,12 @@ describe("resolveBoundEndpoints", () => {
     ).toEqual([{ kind: "tailnet", httpBaseUrl: "http://100.101.102.103:3773/" }]);
   });
 
+  it("never reports a host name, which can resolve to another machine per client", () => {
+    for (const host of ["server.local", "devbox", "devbox.home.arpa"]) {
+      expect(resolveBoundEndpoints({ host, port: 3773, interfaces: INTERFACES })).toEqual([]);
+    }
+  });
+
   it("never reports a public address, which would carry the credential over plain HTTP", () => {
     expect(
       resolveBoundEndpoints({ host: "203.0.113.20", port: 3773, interfaces: INTERFACES }),

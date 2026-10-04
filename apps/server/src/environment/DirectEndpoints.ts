@@ -17,6 +17,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
+import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 
 import { isPrivateNetworkHost } from "@t3tools/shared/hostClassification";
@@ -34,11 +35,13 @@ export class DirectEndpoints extends Context.Service<
 >()("t3/environment/DirectEndpoints") {}
 
 /**
- * Only private-network and tailnet addresses are reported. These routes are
- * plain HTTP and carry the client's credential, so a public address would
- * send it across the internet unencrypted.
+ * Only numeric private-network and tailnet IPv4 addresses are reported. These
+ * routes are plain HTTP and carry the client's credential, so a public address
+ * would send it across the internet unencrypted, and a name (`server.local`)
+ * can resolve to a different machine on each client's network.
  */
 const isAdvertisableAddress = (address: string): boolean =>
+  NodeNet.isIPv4(address) &&
   !address.startsWith("127.") &&
   !address.startsWith("169.254.") &&
   (isTailscaleIpv4Address(address) || isPrivateNetworkHost(address));

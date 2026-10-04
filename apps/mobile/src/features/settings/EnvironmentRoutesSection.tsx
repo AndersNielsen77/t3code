@@ -212,6 +212,7 @@ function RouteRow(props: {
         accessibilityLabel={[
           label,
           address,
+          isLearned(route) ? "Found automatically" : null,
           props.inUse ? "In use" : null,
           `Route ${props.position} of ${props.count}`,
         ]
