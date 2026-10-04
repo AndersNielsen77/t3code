@@ -63,6 +63,7 @@ export function EnvironmentRow({
   label,
   subtitle,
   below,
+  detail,
   dimmed = false,
   className,
   children,
@@ -72,6 +73,8 @@ export function EnvironmentRow({
   readonly subtitle: ReactNode;
   /** Extra content under the subtitle, such as update progress. */
   readonly below?: ReactNode;
+  /** Expanded content under the whole row, aligned with the label, such as its routes. */
+  readonly detail?: ReactNode;
   readonly dimmed?: boolean;
   readonly className?: string;
   readonly children?: ReactNode;
@@ -91,6 +94,7 @@ export function EnvironmentRow({
         {below}
       </div>
       <div className="flex shrink-0 items-center gap-1">{children}</div>
+      {detail ? <div className="col-span-2 col-start-2 min-w-0">{detail}</div> : null}
     </div>
   );
 }

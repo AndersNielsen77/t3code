@@ -1587,7 +1587,7 @@ function SavedBackendListRow({
       label={environment.label}
       dimmed={!enabled}
       subtitle={
-        <span className="flex min-w-0 items-center gap-1.5">
+        <span className="flex min-w-0 items-center gap-1">
           <Tooltip>
             {/* The status can change while the tooltip is open, and base-ui only
                 re-measures the popup when the trigger's payload changes. */}
@@ -1611,6 +1611,9 @@ function SavedBackendListRow({
               {statusTooltip}
             </TooltipPopup>
           </Tooltip>
+          <span aria-hidden className="shrink-0">
+            ·
+          </span>
           <button
             type="button"
             aria-expanded={routesOpen}
@@ -1622,19 +1625,19 @@ function SavedBackendListRow({
         </span>
       }
       below={
-        <>
-          {serverUpdateState.status !== "idle" ? (
-            <div className="mt-1 max-w-md">
-              <ServerUpdateProgress state={serverUpdateState} />
-            </div>
-          ) : null}
-          {routesOpen ? (
-            <EnvironmentRoutesList
-              environment={environment}
-              onAddRoute={() => onAddRoute(environment)}
-            />
-          ) : null}
-        </>
+        serverUpdateState.status !== "idle" ? (
+          <div className="mt-1 max-w-md">
+            <ServerUpdateProgress state={serverUpdateState} />
+          </div>
+        ) : null
+      }
+      detail={
+        routesOpen ? (
+          <EnvironmentRoutesList
+            environment={environment}
+            onAddRoute={() => onAddRoute(environment)}
+          />
+        ) : null
       }
     >
       {unsupported &&
