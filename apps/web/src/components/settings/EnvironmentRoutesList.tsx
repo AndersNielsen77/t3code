@@ -26,6 +26,7 @@ import {
 import { GripVerticalIcon, PlusIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 
+import { requestConfirmDialog } from "~/confirmDialog";
 import { environmentCatalog } from "~/connection/catalog";
 import { cn } from "~/lib/utils";
 import type { EnvironmentPresentation } from "~/state/environments";
@@ -72,6 +73,21 @@ export function EnvironmentRoutesList({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
+  // Removing a paired route forgets its credential, so it asks first, like
+  // on mobile. No mounted confirm host means no removal.
+  const confirmRemove = async (route: ConnectionRoute) => {
+    const address = connectionRouteAddress(route);
+    const confirmed = await requestConfirmDialog(
+      `Remove ${connectionRouteLabel(route)} route?${address === null ? "" : `\n${address}`}`,
+      { variant: "destructive" },
+    );
+    if (confirmed !== true) return;
+    await removeRoute({
+      environmentId: environment.environmentId,
+      routeId: connectionRouteId(route.target),
+    });
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     if (event.over === null || event.active.id === event.over.id) return;
     const next = arrayMove(
@@ -104,12 +120,7 @@ export function EnvironmentRoutesList({
                 // The last route goes with the machine; that is "Remove from
                 // this device", not a route action.
                 removable={routes.length > 1}
-                onRemove={() =>
-                  void removeRoute({
-                    environmentId: environment.environmentId,
-                    routeId: connectionRouteId(route.target),
-                  })
-                }
+                onRemove={() => void confirmRemove(route)}
               />
             ))}
           </ol>

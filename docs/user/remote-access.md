@@ -64,11 +64,11 @@ another link to share.
 
 ### Reach one machine several ways
 
-A machine can have more than one route: LAN, Tailscale, T3 Connect, or SSH. To
-add one, choose **Add route** in the machine's route list, or next to it in the
-T3 Connect list. Pairing the same machine again over another address also adds
-a route instead of a second machine. Faster routes go first: LAN, then
-Tailscale, then T3 Connect.
+A machine can have more than one route: LAN, Tailscale, a public URL, SSH, or
+T3 Connect. To add one, choose **Add route** in the machine's route list, or
+next to it in the T3 Connect list. Pairing the same machine again over another
+address also adds a route instead of a second machine. A new route is placed by
+speed, in that order, and you can reorder routes at any time.
 
 T3 Code connects over the first route that answers. Away from home, a LAN
 address that does not answer is checked briefly and skipped. It is only tried

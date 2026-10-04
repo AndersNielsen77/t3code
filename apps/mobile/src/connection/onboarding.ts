@@ -15,7 +15,10 @@ export const connectPairingUrl = createRuntimeCommand(connectionAtomRuntime, {
   scheduler: onboardingScheduler,
   concurrency: {
     mode: "singleFlight",
-    key: (input: { readonly pairingUrl: string }) => input.pairingUrl,
+    // Adding a route to a different machine with the same link is its own
+    // operation: it must check its own expected machine.
+    key: (input: { readonly pairingUrl: string; readonly expectedEnvironmentId?: EnvironmentId }) =>
+      JSON.stringify([input.pairingUrl, input.expectedEnvironmentId ?? null]),
   },
   execute: (input: {
     readonly pairingUrl: string;
