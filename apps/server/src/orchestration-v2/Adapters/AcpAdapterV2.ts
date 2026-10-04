@@ -1589,6 +1589,21 @@ export function makeAcpAdapterV2(
             embeddedTerminalsByToolCallId.delete(oldest);
           }
         };
+        // Command lines of the terminals embedded in a tool call, so MCP calls
+        // made through the acp-mcp-call terminal fallback keep their identity.
+        const embeddedTerminalCommands = (
+          sessionId: string,
+          toolCallId: string,
+        ): ReadonlyArray<string> =>
+          (
+            embeddedTerminalsByToolCallId.get(sessionScopedId(sessionId, toolCallId))
+              ?.terminalIds ?? []
+          ).flatMap((terminalId) => {
+            const command =
+              clientTerminals?.readCommandLine(terminalId) ??
+              agentTerminalsById.get(sessionScopedId(sessionId, terminalId))?.command;
+            return command === undefined ? [] : [command];
+          });
         // Client terminals (Devin) run with the T3 server's privileges, so they
         // are policy-checked against the active turn policy; a command the user
         // already approved satisfies an "ask" disposition.
@@ -3224,17 +3239,10 @@ export function makeAcpAdapterV2(
           // agent-specific shape and project the same branded dynamic_tool
           // item native providers produce (e.g. the T3 orchestration tools).
           const mcpIdentity = extractMcpToolCallIdentity(toolCall, {
-            embeddedTerminalCommands: (
-              embeddedTerminalsByToolCallId.get(
-                sessionScopedId(context.nativeThreadId, toolCall.toolCallId),
-              )?.terminalIds ?? []
-            ).flatMap((terminalId) => {
-              const command =
-                clientTerminals?.readCommandLine(terminalId) ??
-                agentTerminalsById.get(sessionScopedId(context.nativeThreadId, terminalId))
-                  ?.command;
-              return command === undefined ? [] : [command];
-            }),
+            embeddedTerminalCommands: embeddedTerminalCommands(
+              context.nativeThreadId,
+              toolCall.toolCallId,
+            ),
           });
           let turnItem: OrchestrationV2TurnItem;
           if (toolCall.toolCallId.startsWith("acp-compaction:")) {
@@ -4263,7 +4271,8 @@ export function makeAcpAdapterV2(
             return;
           }
           if (context.finalized) return;
-          if (notification.sessionId !== (yield* Ref.get(activeSessionId))) {
+          const rootSessionId = yield* Ref.get(activeSessionId);
+          if (notification.sessionId !== rootSessionId) {
             // Finalize may have completed during the activeSessionId yield.
             if (context.finalized) return;
             if (flavor.extractSubagentUpdate === undefined) return;
@@ -4291,7 +4300,17 @@ export function makeAcpAdapterV2(
                 const key = `${nativeTaskId}:tool:${toolCall.toolCallId}`;
                 const merged = mergeToolCallState(context.tools.get(key), toolCall);
                 context.tools.set(key, merged);
-                const mcpIdentity = extractMcpToolCallIdentity(merged);
+                // Terminals are remembered under the raw session id: the child's
+                // own session, or the root one when the flavor routes child
+                // updates out of it (Devin).
+                const mcpIdentity = extractMcpToolCallIdentity(merged, {
+                  embeddedTerminalCommands: [
+                    ...embeddedTerminalCommands(notification.sessionId, toolCall.toolCallId),
+                    ...(rootSessionId === null
+                      ? []
+                      : embeddedTerminalCommands(rootSessionId, toolCall.toolCallId)),
+                  ],
+                });
                 const now = yield* DateTime.now;
                 const status = toolStatus(merged.status);
                 const startedAt = context.toolStartedAt.get(key) ?? now;

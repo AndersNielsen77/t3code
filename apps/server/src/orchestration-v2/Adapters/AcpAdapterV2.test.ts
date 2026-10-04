@@ -1008,9 +1008,12 @@ describe("AcpAdapterV2", () => {
       );
       type Runtime = AcpSessionRuntime.AcpSessionRuntime["Service"];
       let handler: Parameters<Runtime["handleSessionUpdate"]>[0] | undefined;
+      let createTerminal: Parameters<Runtime["handleCreateTerminal"]>[0] | undefined;
       const instanceId = ProviderInstanceId.make("devin-replay");
       const adapter = makeAcpAdapterV2({
         instanceId,
+        // Production Devin runs commands through client terminals.
+        clientTerminals: { childProcessSpawner, shellCommands: true },
         crypto: yield* Crypto.Crypto,
         fileSystem: yield* FileSystem.FileSystem,
         idAllocator,
@@ -1031,9 +1034,18 @@ describe("AcpAdapterV2", () => {
                 Effect.sync(() => {
                   handler = next;
                 }).pipe(Effect.andThen(runtime.handleSessionUpdate(next))),
+              handleCreateTerminal: (next) =>
+                Effect.sync(() => {
+                  createTerminal = next;
+                }).pipe(Effect.andThen(runtime.handleCreateTerminal(next))),
               prompt: () =>
                 Effect.gen(function* () {
                   assert.isDefined(handler);
+                  assert.isDefined(createTerminal);
+                  const fallbackTerminal = yield* createTerminal(
+                    { sessionId: "mock-session-1", command: "true acp-mcp-call task_status {}" },
+                    { requestId: "child-mcp-terminal", method: "terminal/create" },
+                  );
                   // Production thread 54aeb6d7 split after "(command". Metadata shapes
                   // below were captured from live Devin sessions showy-mile/fragrant-chamomile.
                   const updates = [
@@ -1093,6 +1105,15 @@ describe("AcpAdapterV2", () => {
                         is_mcp_tool_call: true,
                         "cognition.ai/subagent_context": { parentAgentId: "child-a" },
                       },
+                    },
+                    {
+                      sessionUpdate: "tool_call",
+                      toolCallId: "child-mcp-fallback",
+                      title: "Ran command",
+                      kind: "execute",
+                      status: "completed",
+                      content: [{ type: "terminal", terminalId: fallbackTerminal.terminalId }],
+                      _meta: { "cognition.ai/subagent_context": { parentAgentId: "child-a" } },
                     },
                     {
                       sessionUpdate: "tool_call",
@@ -1225,6 +1246,15 @@ describe("AcpAdapterV2", () => {
       );
       assert.deepEqual([...childMessages.values()], ["Checking the code.", "ONE"]);
       assert.equal(task?.prompt, "Run pwd, then reply ONE.");
+      // Terminal-fallback MCP calls in a child session keep their T3 identity.
+      assert.isTrue(
+        items.some(
+          (item) =>
+            item.threadId === task?.childThreadId &&
+            item.type === "dynamic_tool" &&
+            item.toolName === "t3-code.task_status",
+        ),
+      );
       const childMcp = items.find(
         (item) =>
           item.threadId === task?.childThreadId &&
