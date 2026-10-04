@@ -137,28 +137,29 @@ const serveProbeLayer = (status: number) =>
     ),
   );
 
+/** A loopback-only server with Tailscale Serve on, so only the Serve name can be listed. */
+const serveConfigLayer = Layer.effect(
+  ServerConfig.ServerConfig,
+  Effect.map(ServerConfig.ServerConfig, (config) => ({
+    ...config,
+    host: "127.0.0.1",
+    tailscaleServeEnabled: true,
+    tailscaleServePort: 443,
+  })),
+).pipe(
+  Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-direct-" })),
+  Layer.provide(NodeServices.layer),
+);
+
 const resolveWithServe = (probeStatus: number) =>
   Effect.flatMap(DirectEndpoints.DirectEndpoints, (service) => service.resolve()).pipe(
     Effect.provide(
       DirectEndpoints.layer.pipe(
         Layer.provide(
-          Layer.mergeAll(
-            Layer.effect(
-              ServerConfig.ServerConfig,
-              Effect.map(ServerConfig.ServerConfig, (config) => ({
-                ...config,
-                host: "127.0.0.1",
-                tailscaleServeEnabled: true,
-                tailscaleServePort: 443,
-              })),
-            ).pipe(Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-direct-" }))),
-            tailscaleUpLayer,
-            serveProbeLayer(probeStatus),
-          ),
+          Layer.mergeAll(serveConfigLayer, tailscaleUpLayer, serveProbeLayer(probeStatus)),
         ),
       ),
     ),
-    Effect.provide(NodeServices.layer),
   );
 
 describe("DirectEndpoints Tailscale Serve", () => {
