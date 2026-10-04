@@ -20,6 +20,26 @@ import {
 import * as IdAllocator from "./IdAllocator.ts";
 import { ContextHandoffBudgetError } from "./ContextHandoffDelivery.ts";
 import { ProviderAdapterTurnStartError } from "./ProviderAdapter.ts";
+import { SqlError, classifySqliteError } from "effect/unstable/sql/SqlError";
+import { isStorageFullError } from "./StorageFailure.ts";
+
+it("explains disk exhaustion through provider, platform and SQLite errors", () => {
+  const diskFull = Object.assign(new Error("database or disk is full"), {
+    code: "ERR_SQLITE_ERROR",
+    errcode: 13,
+  });
+  for (const cause of [
+    { cause: { code: "ENOSPC" } },
+    { reason: { cause: { code: "ENOSPC" } } },
+    new SqlError({ reason: classifySqliteError(diskFull, { operation: "execute" }) }),
+    Cause.fail({ cause: diskFull }),
+  ]) {
+    assert.isTrue(isStorageFullError(cause));
+    assert.include(makeProviderFailure({ cause }).message, "Free space on the server");
+  }
+  assert.isFalse(isStorageFullError({ code: "EACCES", message: "Permission denied" }));
+  assert.isFalse(isStorageFullError(new Error("database is locked")));
+});
 
 it("redacts credentials and URL secrets from provider failures", () => {
   const failure = makeProviderFailure({
