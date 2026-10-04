@@ -43,6 +43,7 @@ import {
   type OrchestrationV2Subagent,
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2TurnItem,
+  latestProviderTurnForAttempt,
   orchestrationV2RunWorkStartedAt,
   ProviderInstanceId,
   type ProviderSessionId,
@@ -602,7 +603,7 @@ function providerTurnForRun(
   }
 
   return (
-    projection.providerTurns.find((turn) => turn.runAttemptId === run.activeAttemptId) ??
+    latestProviderTurnForAttempt(projection.providerTurns, run.activeAttemptId) ??
     projection.providerTurns.find((turn) => {
       const attempt = projection.attempts.find((candidate) => candidate.id === run.activeAttemptId);
       return attempt?.providerTurnId === turn.id;
@@ -4508,10 +4509,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       if (dispatchMode.type === "steer_active") {
         const targetRunId = dispatchMode.targetRunId;
         const target = projection.runs.find((run) => run.id === targetRunId);
-        const turn = projection.providerTurns.find(
-          (candidate) =>
-            candidate.runAttemptId === target?.activeAttemptId &&
-            candidate.nodeId === target?.rootNodeId,
+        const turn = latestProviderTurnForAttempt(
+          projection.providerTurns.filter((candidate) => candidate.nodeId === target?.rootNodeId),
+          target?.activeAttemptId,
         );
         // The client may still show a running turn while its completion is being
         // projected. Preserve the submission as a new turn when steering is too late.
@@ -5418,9 +5418,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const sourceProviderTurnId =
         sourceProjection === null || sourceRun === null || sourceRun.activeAttemptId === null
           ? undefined
-          : (sourceProjection.providerTurns.find(
-              (candidate) => candidate.runAttemptId === sourceRun.activeAttemptId,
-            )?.id ??
+          : (latestProviderTurnForAttempt(sourceProjection.providerTurns, sourceRun.activeAttemptId)
+              ?.id ??
             sourceProjection.attempts.find(
               (candidate) => candidate.id === sourceRun.activeAttemptId,
             )?.providerTurnId ??
