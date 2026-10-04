@@ -3244,6 +3244,18 @@ it.effect("omits run_interrupt_result when superseded attempt request is already
   }),
 );
 
+it.effect("does not overwrite Stop when ownership changes after the finalization read", () =>
+  Effect.gen(function* () {
+    const { written, observed } = yield* captureRootRunTermination({
+      key: "stop-wins-finalization-gap",
+      shouldFinalizeRun: () => Effect.succeed(true),
+      rejectTerminalWrite: true,
+    });
+    assert.deepEqual(written, []);
+    assert.deepEqual(observed, []);
+  }),
+);
+
 it.effect("emits run_interrupt_result when hard-stop finalizes the active attempt", () =>
   Effect.gen(function* () {
     const { written, observed } = yield* captureRootRunTermination({
@@ -3383,6 +3395,7 @@ it.effect("keeps completed runs completed when pull request refresh fails", () =
 function captureRootRunTermination(input: {
   readonly key: string;
   readonly shouldFinalizeRun: () => Effect.Effect<boolean, ProjectionStore.ProjectionStoreV2Error>;
+  readonly rejectTerminalWrite?: boolean;
   readonly hasUnpairedRunInterruptRequest?: () => Effect.Effect<boolean, never>;
   readonly seedOpenSubagent?: boolean;
   readonly events?: (
@@ -3433,9 +3446,11 @@ function captureRootRunTermination(input: {
               }),
             writeWithEffects: (payload) => captureFinalEvents(payload.events).pipe(Effect.as([])),
             writeIfRunCurrent: (payload) =>
-              captureFinalEvents(payload.events).pipe(
-                Effect.as({ committed: true, storedEvents: [] }),
-              ),
+              input.rejectTerminalWrite === true
+                ? Effect.succeed({ committed: false, storedEvents: [] })
+                : captureFinalEvents(payload.events).pipe(
+                    Effect.as({ committed: true, storedEvents: [] }),
+                  ),
           }),
           IdAllocator.layer,
           Layer.mock(ProviderEventIngestor.ProviderEventIngestorV2)({

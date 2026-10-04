@@ -12,20 +12,12 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import { setTimeout as waitForNativeTimer } from "node:timers/promises";
 
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 
-const yieldToRuntime = Effect.yieldNow.pipe(
-  Effect.andThen(
-    Effect.promise(
-      () =>
-        new Promise<void>((resolve) => {
-          setImmediate(resolve);
-        }),
-    ),
-  ),
-);
+const waitForTerminalPoll = Effect.promise(() => waitForNativeTimer(10));
 
 export class ProviderTurnControlError extends Schema.TaggedError<ProviderTurnControlError>()(
   "ProviderTurnControlError",
@@ -175,7 +167,8 @@ export const layer: Layer.Layer<
       readonly attemptId: RunAttemptId;
     }) =>
       Effect.gen(function* () {
-        for (let remaining = 1_000; remaining > 0; remaining -= 1) {
+        const deadline = performance.now() + 2_000;
+        while (performance.now() < deadline) {
           const { providerTurn, attempt } = yield* projections.getProviderControlContext(
             input.threadId,
             input,
@@ -191,7 +184,7 @@ export const layer: Layer.Layer<
           // Terminal events run on a detached ingestion fiber. Let it finish
           // before Stop synthesizes settlement or Restart replaces the turn.
           // Yield through Node so deterministic clocks cannot pin ingestion.
-          yield* yieldToRuntime;
+          yield* waitForTerminalPoll;
         }
         return false;
       });
