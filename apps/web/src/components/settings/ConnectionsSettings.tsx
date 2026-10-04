@@ -1,4 +1,5 @@
 import {
+  ChevronRightIcon,
   ChevronsLeftRightEllipsisIcon,
   EllipsisIcon,
   PlusIcon,
@@ -1618,9 +1619,16 @@ function SavedBackendListRow({
             type="button"
             aria-expanded={routesOpen}
             onClick={() => setRoutesOpen((open) => !open)}
-            className="shrink-0 rounded-sm text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-1 focus-visible:ring-ring"
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
           >
             {routeCount === 1 ? "Routes" : `${routeCount} routes`}
+            <ChevronRightIcon
+              aria-hidden
+              className={cn(
+                "size-3 shrink-0 transition-transform duration-150 motion-reduce:transition-none",
+                routesOpen && "rotate-90",
+              )}
+            />
           </button>
         </span>
       }
