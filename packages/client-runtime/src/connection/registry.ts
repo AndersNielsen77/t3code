@@ -47,7 +47,7 @@ import {
   connectionRouteId,
   connectionRoutes,
   entryWithRoutes,
-  findBearerRouteByUrl,
+  findRouteToSameAddress,
   upsertRoute,
 } from "./routes.ts";
 
@@ -552,10 +552,7 @@ export const make = Effect.gen(function* () {
         if (previous !== undefined) {
           const route: ConnectionRoute = { target: registered.target, profile: registered.profile };
           const existing = connectionRoutes(previous);
-          const sameAddress =
-            registration._tag === "BearerConnectionRegistration"
-              ? findBearerRouteByUrl(existing, registration.profile.httpBaseUrl)
-              : undefined;
+          const sameAddress = findRouteToSameAddress(existing, route);
           const routes = existing.filter(
             (existing) =>
               existing !== sameAddress ||

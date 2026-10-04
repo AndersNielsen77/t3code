@@ -135,17 +135,29 @@ export function upsertRoute(
     : insertRoute(routes, route);
 }
 
-/** Another bearer route already saved for this exact address. */
-export function findBearerRouteByUrl(
+/**
+ * A saved route that reaches the same address as `route`: the same bearer
+ * URL, or the same SSH host. Registering it again replaces that route, even
+ * when it was saved under another id.
+ */
+export function findRouteToSameAddress(
   routes: ReadonlyArray<ConnectionRoute>,
-  httpBaseUrl: string,
+  route: ConnectionRoute,
 ): ConnectionRoute | undefined {
-  const normalized = httpBaseUrl.replace(/\/+$/, "");
-  return routes.find(
-    (route) =>
-      route.target._tag === "BearerConnectionTarget" &&
-      routeHttpBaseUrl(route)?.replace(/\/+$/, "") === normalized,
-  );
+  const key = routeAddressKey(route);
+  return key === null ? undefined : routes.find((existing) => routeAddressKey(existing) === key);
+}
+
+function routeAddressKey(route: ConnectionRoute): string | null {
+  const profile = Option.getOrNull(route.profile);
+  switch (profile?._tag) {
+    case "BearerConnectionProfile":
+      return `bearer:${profile.httpBaseUrl.replace(/\/+$/, "")}`;
+    case "SshConnectionProfile":
+      return `ssh:${profile.target.username ?? ""}@${profile.target.hostname}:${profile.target.port ?? 22}`;
+    default:
+      return null;
+  }
 }
 
 /** Short user-facing route description: "LAN", "Tailscale", "T3 Connect", a URL, or an SSH host. */

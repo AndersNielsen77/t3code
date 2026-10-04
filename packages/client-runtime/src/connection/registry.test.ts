@@ -32,6 +32,7 @@ import {
   PrimaryConnectionRegistration,
   RelayConnectionRegistration,
   SshConnectionProfile,
+  SshConnectionRegistration,
   type ConnectionCredential,
   type ConnectionProfile,
 } from "./catalog.ts";
@@ -1694,6 +1695,61 @@ describe("EnvironmentRegistry routes", () => {
         ]);
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
     }),
+  );
+
+  it.effect("a second SSH host for the same machine adds a route beside the first", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness([SSH_CONNECTION], [SSH_PROFILE]);
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        const other = new SshConnectionTarget({
+          ...SSH_CONNECTION,
+          connectionId: "ssh-connection-other-host",
+        });
+        yield* registry.register(
+          new SshConnectionRegistration({
+            target: other,
+            profile: new SshConnectionProfile({
+              ...SSH_PROFILE,
+              connectionId: other.connectionId,
+              target: { ...SSH_TARGET, alias: "other", hostname: "other.example.test" },
+            }),
+          }),
+        );
+
+        expect(
+          routesOf(yield* Ref.get(harness.storedTargets), SSH_CONNECTION.environmentId),
+        ).toEqual([SSH_CONNECTION, other]);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect(
+    "adding a saved SSH host again replaces its route, whatever id it was saved under",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeHarness([SSH_CONNECTION], [SSH_PROFILE]);
+        yield* Effect.gen(function* () {
+          const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+          const again = new SshConnectionTarget({
+            ...SSH_CONNECTION,
+            connectionId: "ssh-connection-new-id",
+          });
+          yield* registry.register(
+            new SshConnectionRegistration({
+              target: again,
+              profile: new SshConnectionProfile({
+                ...SSH_PROFILE,
+                connectionId: again.connectionId,
+              }),
+            }),
+          );
+
+          expect(
+            routesOf(yield* Ref.get(harness.storedTargets), SSH_CONNECTION.environmentId),
+          ).toEqual([again]);
+        }).pipe(Effect.provide(harness.layer), Effect.scoped);
+      }),
   );
 
   it.effect("signing out of T3 Connect keeps an environment that still has a LAN route", () =>

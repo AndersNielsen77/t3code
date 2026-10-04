@@ -260,7 +260,10 @@ export const prepareSshRegistration = Effect.fn(
 )(function* (input: SshConnectionInput) {
   const gateway = yield* ClientCapabilities.SshEnvironmentGateway;
   const provisioned = yield* gateway.provision(input.target);
-  const connectionId = `ssh:${provisioned.environmentId}`;
+  // One id per SSH host, so a second host for the same machine adds a route
+  // instead of replacing the first.
+  const host = provisioned.bootstrap.target;
+  const connectionId = `ssh:${provisioned.environmentId}:${host.username ?? ""}@${host.hostname}:${host.port ?? 22}`;
   const label = input.label?.trim() || provisioned.label || provisioned.bootstrap.target.alias;
 
   return new SshConnectionRegistration({
