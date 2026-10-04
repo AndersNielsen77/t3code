@@ -1,5 +1,6 @@
 import {
   type DeviceListInput,
+  authScopeRequiredResponse,
   AssetCreateUrlInput,
   GitPreparePullRequestThreadInput,
   AuthAccessReadScope,
@@ -236,7 +237,7 @@ export function requiredScopeForRpcMethod(method: string): AuthEnvironmentScope 
 export const rpcAuthorizationError = (requiredScope: AuthEnvironmentScope) =>
   new EnvironmentAuthorizationError({
     message: `The authenticated token is missing required scope: ${requiredScope}.`,
-    requiredScope,
+    ...authScopeRequiredResponse(requiredScope),
   });
 
 const SettingsUpdate = Schema.Struct({
