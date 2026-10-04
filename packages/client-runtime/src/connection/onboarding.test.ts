@@ -150,6 +150,25 @@ describe("connection onboarding", () => {
     }),
   );
 
+  it.effect("refuses to add a route that reaches a different machine, keeping the code", () =>
+    Effect.gen(function* () {
+      const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
+      const error = yield* preparePairingRegistration({
+        host: "remote.example.test",
+        pairingCode: "pairing-token",
+        expectedEnvironmentId: EnvironmentId.make("some-other-machine"),
+      }).pipe(
+        Effect.provide(Layer.mergeAll(CLIENT_PRESENTATION_LAYER, pairingHttpLayer(calls))),
+        Effect.flip,
+      );
+      expect(error).toMatchObject({ reason: "configuration" });
+      expect(error.message).toContain("different machine");
+      expect(calls.map((call) => call.url)).toEqual([
+        "https://remote.example.test/.well-known/t3/environment",
+      ]);
+    }),
+  );
+
   it.effect("pairs an outdated server so it can be updated from this client", () =>
     Effect.gen(function* () {
       const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];

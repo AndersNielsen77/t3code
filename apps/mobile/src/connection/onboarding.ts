@@ -13,10 +13,17 @@ const onboardingScheduler = createAtomCommandScheduler();
 export const connectPairingUrl = createRuntimeCommand(connectionAtomRuntime, {
   label: "mobile:connection:connect-pairing-url",
   scheduler: onboardingScheduler,
-  concurrency: { mode: "singleFlight", key: (pairingUrl: string) => pairingUrl },
-  execute: (pairingUrl: string) =>
+  concurrency: {
+    mode: "singleFlight",
+    key: (input: { readonly pairingUrl: string }) => input.pairingUrl,
+  },
+  execute: (input: {
+    readonly pairingUrl: string;
+    /** Set when adding a route to this saved machine. */
+    readonly expectedEnvironmentId?: EnvironmentId;
+  }) =>
     ConnectionOnboarding.ConnectionOnboarding.pipe(
-      Effect.flatMap((onboarding) => onboarding.registerPairing({ pairingUrl })),
+      Effect.flatMap((onboarding) => onboarding.registerPairing(input)),
     ),
 });
 
