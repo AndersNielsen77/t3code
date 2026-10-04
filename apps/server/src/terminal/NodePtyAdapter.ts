@@ -74,14 +74,13 @@ const ensureNodePtySpawnHelperExecutable = Effect.fn(function* () {
 
   const helperPath = yield* resolveNodePtySpawnHelperPath;
   if (!helperPath) return;
-  didEnsureSpawnHelperExecutable = true;
 
-  if (!(yield* fs.exists(helperPath))) {
-    return;
+  if (yield* fs.exists(helperPath)) {
+    // Best-effort: avoid FileSystem.stat in packaged mode where some fs metadata can be missing.
+    yield* fs.chmod(helperPath, 0o755).pipe(Effect.orElseSucceed(() => undefined));
   }
-
-  // Best-effort: avoid FileSystem.stat in packaged mode where some fs metadata can be missing.
-  yield* fs.chmod(helperPath, 0o755).pipe(Effect.orElseSucceed(() => undefined));
+  // Set only once the check has finished, so an interrupted check runs again.
+  didEnsureSpawnHelperExecutable = true;
 });
 
 /**

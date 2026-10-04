@@ -21,6 +21,7 @@ import {
 } from "@t3tools/contracts";
 import { codexModelFamily } from "@t3tools/shared/model";
 import * as Cache from "effect/Cache";
+import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -361,7 +362,11 @@ export const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const fromDisk = yield* fileSystem.readFileString(cachePath).pipe(
           Effect.flatMap((raw) => decodeManifestCache(raw)),
-          Effect.catchCause(() => Effect.succeed(null)),
+          // An interruption must stay one, or `Cache` would keep this load as a
+          // successful empty result and never read the disk copy again.
+          Effect.catchCause((cause) =>
+            Cause.hasInterrupts(cause) ? Effect.interrupt : Effect.succeed(null),
+          ),
         );
         if (fromDisk === null) return;
         // The disk copy is the last-seen remote manifest, so it outranks the
