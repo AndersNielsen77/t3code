@@ -87,28 +87,60 @@ const connectivityLayer = Connectivity.layer({
   ),
 });
 
+interface NetworkInformationLike extends EventTarget {
+  readonly type?: string;
+}
+
+/**
+ * Wakes connections when the browser reports a different network path, such
+ * as a laptop moving from Wi-Fi to a phone hotspot. Only some browsers expose
+ * `navigator.connection`; elsewhere the periodic route check covers it.
+ */
+const networkPathChanges = Stream.callback<"network-changed">((queue) =>
+  Effect.acquireRelease(
+    Effect.sync(() => {
+      const connection =
+        typeof navigator === "undefined"
+          ? undefined
+          : (navigator as Navigator & { readonly connection?: NetworkInformationLike }).connection;
+      if (connection === undefined) return undefined;
+      const listener = () => Queue.offerUnsafe(queue, "network-changed");
+      connection.addEventListener("change", listener);
+      return { connection, listener };
+    }),
+    (subscription) =>
+      Effect.sync(() =>
+        subscription?.connection.removeEventListener("change", subscription.listener),
+      ),
+  ).pipe(Effect.asVoid),
+);
+
 const wakeupsLayer = Wakeups.layer({
-  changes: Stream.merge(
-    Stream.callback<"application-active">((queue) =>
-      Effect.acquireRelease(
-        Effect.sync(() => {
-          const listener = () => {
-            if (document.visibilityState === "visible") {
-              Queue.offerUnsafe(queue, "application-active");
-            }
-          };
-          document.addEventListener("visibilitychange", listener);
-          return listener;
-        }),
-        (listener) =>
+  changes: Stream.mergeAll(
+    [
+      Stream.callback<"application-active">((queue) =>
+        Effect.acquireRelease(
           Effect.sync(() => {
-            document.removeEventListener("visibilitychange", listener);
+            const listener = () => {
+              if (document.visibilityState === "visible") {
+                Queue.offerUnsafe(queue, "application-active");
+              }
+            };
+            document.addEventListener("visibilitychange", listener);
+            return listener;
           }),
-      ).pipe(Effect.asVoid),
-    ),
-    managedRelayAccountChanges(appAtomRegistry).pipe(
-      Stream.map(() => "credentials-changed" as const),
-    ),
+          (listener) =>
+            Effect.sync(() => {
+              document.removeEventListener("visibilitychange", listener);
+            }),
+        ).pipe(Effect.asVoid),
+      ),
+      managedRelayAccountChanges(appAtomRegistry).pipe(
+        Stream.map(() => "credentials-changed" as const),
+      ),
+      networkPathChanges,
+    ],
+    { concurrency: "unbounded" },
   ),
 });
 

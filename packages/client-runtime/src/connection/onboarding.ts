@@ -32,6 +32,7 @@ import {
 import * as Persistence from "../platform/persistence.ts";
 import * as EnvironmentRegistry from "./registry.ts";
 import { orchestrationProtocolCompatibilityError } from "./compatibility.ts";
+import { connectionRoutes, routeEntry } from "./routes.ts";
 
 export interface PairingConnectionInput {
   readonly pairingUrl?: string;
@@ -84,6 +85,15 @@ const resolvePairingTarget = Effect.fn("clientRuntime.connection.onboarding.reso
   },
 );
 
+/**
+ * One bearer route per address, so pairing over Tailscale adds a route next
+ * to the LAN one instead of replacing it. Pairing the same address again
+ * reuses the id and replaces that route.
+ */
+export function bearerConnectionId(environmentId: EnvironmentId, httpBaseUrl: string): string {
+  return `bearer:${environmentId}:${new URL(httpBaseUrl).host}`;
+}
+
 export const preparePairingRegistration = Effect.fn(
   "clientRuntime.connection.onboarding.preparePairingRegistration",
 )(function* (input: PairingConnectionInput) {
@@ -103,7 +113,7 @@ export const preparePairingRegistration = Effect.fn(
     scopes: presentation.scopes,
     clientMetadata: presentation.metadata,
   }).pipe(Effect.mapError(mapRemoteEnvironmentError));
-  const connectionId = `bearer:${descriptor.environmentId}`;
+  const connectionId = bearerConnectionId(descriptor.environmentId, target.httpBaseUrl);
 
   return new BearerConnectionRegistration({
     target: new BearerConnectionTarget({
@@ -141,7 +151,15 @@ const updateBearerConnection = Effect.fn(
 )(function* (input: BearerConnectionUpdateInput) {
   const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
   const credentials = yield* ConnectionCredentialStore.ConnectionCredentialStore;
-  const entry = (yield* SubscriptionRef.get(registry.entries)).get(input.environmentId);
+  const saved = (yield* SubscriptionRef.get(registry.entries)).get(input.environmentId);
+  // Editing changes the environment's first direct route; others stay as saved.
+  const route =
+    saved === undefined
+      ? undefined
+      : connectionRoutes(saved).find(
+          (candidate) => candidate.target._tag === "BearerConnectionTarget",
+        );
+  const entry = saved === undefined || route === undefined ? saved : routeEntry(saved, route);
   const credential =
     entry?.target._tag === "BearerConnectionTarget"
       ? yield* credentials.get(entry.target.connectionId)

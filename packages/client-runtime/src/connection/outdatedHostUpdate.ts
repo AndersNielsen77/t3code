@@ -26,6 +26,7 @@ import { isLegacyUpdateHandoffLoss, resolveServerUpdateProgressResult } from "..
 import * as RelayEnvironmentDiscovery from "../relay/discovery.ts";
 import * as ConnectionResolver from "./resolver.ts";
 import * as EnvironmentRegistry from "./registry.ts";
+import { connectionRoutes, hasRelayRoute, routeEntry } from "./routes.ts";
 
 // A v1 host restarting into v2 runs migrations before its descriptor answers again.
 const OUTDATED_HOST_RESTART_TIMEOUT = Duration.minutes(4);
@@ -63,7 +64,11 @@ export const updateOutdatedHost = Effect.fn("clientRuntime.connection.updateOutd
     if (entry === undefined) {
       return yield* new EnvironmentRegistry.EnvironmentNotRegisteredError({ environmentId });
     }
-    const { prepared, descriptor } = yield* resolver.prepareForUpdate(entry);
+    // An outdated server cannot connect normally, so the routes are tried in
+    // order here. The first that authorizes carries the update.
+    const { prepared, descriptor } = yield* Effect.firstSuccessOf(
+      connectionRoutes(entry).map((route) => resolver.prepareForUpdate(routeEntry(entry, route))),
+    );
     const capabilities = descriptor.capabilities;
     if (
       capabilities.serverSelfUpdate === undefined ||
@@ -175,7 +180,7 @@ export const updateOutdatedHost = Effect.fn("clientRuntime.connection.updateOutd
 
     // Discovery still holds the old relay descriptor and would re-block the
     // environment from it, so replace that before clearing the block.
-    if (entry.target._tag === "RelayConnectionTarget") {
+    if (hasRelayRoute(entry)) {
       const discovery = yield* RelayEnvironmentDiscovery.RelayEnvironmentDiscovery;
       yield* discovery.refresh;
     }

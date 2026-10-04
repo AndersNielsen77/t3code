@@ -62,6 +62,24 @@ created in Settings can only be copied from the client that created them while
 its Connections page stays open. If you leave or reload that page, create
 another link to share.
 
+### Reach one machine several ways
+
+A machine can have more than one route: LAN, Tailscale, T3 Connect, or SSH.
+Pair it again over another address, or choose **Add route** next to it in the
+T3 Connect list, and the new route joins the existing one instead of adding a
+second machine. Faster routes go first: LAN, then Tailscale, then T3 Connect.
+
+T3 Code connects over the first route that answers. Away from home, a LAN
+address that does not answer costs one short check before the next route is
+used. While connected over a later route, T3 Code checks the earlier ones when
+your network changes, when you return to the app, and every minute, and moves
+back as soon as one works.
+
+To change the order or remove a route, open the machine's **Routes** menu under
+**Settings → Connections** on web and desktop, or its detail screen under
+**Settings → Environments** on mobile. Signing out of T3 Connect removes only
+that route; a machine you can still reach another way stays saved.
+
 ### Balance new threads across machines
 
 Auto balance is off by default. On web and desktop, enable it in

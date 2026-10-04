@@ -98,12 +98,12 @@ describe("connection onboarding", () => {
         target: {
           environmentId: "environment-paired",
           label: "Paired environment",
-          connectionId: "bearer:environment-paired",
+          connectionId: "bearer:environment-paired:remote.example.test",
         },
         profile: {
           environmentId: "environment-paired",
           label: "Paired environment",
-          connectionId: "bearer:environment-paired",
+          connectionId: "bearer:environment-paired:remote.example.test",
           httpBaseUrl: "https://remote.example.test/",
           wsBaseUrl: "wss://remote.example.test/",
         },

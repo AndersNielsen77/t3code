@@ -81,6 +81,14 @@ export const isLocalLoopbackHost = (host: string): boolean => {
   return parseIpv4Address(normalized)?.[0] === 127;
 };
 
+/** A Tailscale address: a MagicDNS name or the 100.64.0.0/10 range Tailscale assigns. */
+export const isTailnetHost = (host: string): boolean => {
+  const normalized = normalizeHostname(host);
+  if (normalized.endsWith(".ts.net")) return true;
+  const parts = parseIpv4Address(normalized);
+  return parts !== null && parts[0] === 100 && parts[1]! >= 64 && parts[1]! <= 127;
+};
+
 export const isPrivateNetworkHost = (host: string): boolean => {
   const normalized = normalizeHostname(host);
   if (

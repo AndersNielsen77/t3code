@@ -69,6 +69,8 @@ import {
 import { LocalEnvironmentSetting } from "./LocalEnvironmentSetting";
 import { searchableSetting } from "./settingsSearch";
 import { EnvironmentIconMenu } from "./EnvironmentIconPicker";
+import { EnvironmentRoutesMenu } from "./EnvironmentRoutesMenu";
+import { usePreparedConnection } from "~/state/session";
 import {
   EnvironmentRow,
   environmentTransportLabel,
@@ -1537,8 +1539,12 @@ function SavedBackendListRow({
     environment.serverConfig ??
       (lastDescriptor === undefined ? null : { environment: lastDescriptor }),
   );
+  const prepared = usePreparedConnection(environmentId);
   const subtitleText = [
-    environmentTransportLabel(environment),
+    environmentTransportLabel(
+      environment,
+      isConnected && prepared._tag === "Some" ? prepared.value.target : null,
+    ),
     resumingServerUpdate ? "Restarting" : status.text,
     enabled && versionMismatch ? serverVersion : null,
   ]
@@ -1658,6 +1664,7 @@ function SavedBackendListRow({
             environmentId={environmentId}
             serverConfig={environment.serverConfig}
           />
+          <EnvironmentRoutesMenu environment={environment} />
           {errorTraceId ? (
             <MenuItem onClick={() => copyTraceId(errorTraceId)}>Copy trace ID</MenuItem>
           ) : null}
