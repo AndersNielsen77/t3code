@@ -64,21 +64,23 @@ another link to share.
 
 ### Reach one machine several ways
 
-A machine can have more than one route: LAN, Tailscale, T3 Connect, or SSH.
-Pair it again over another address, or choose **Add route** next to it in the
-T3 Connect list, and the new route joins the existing one instead of adding a
-second machine. Faster routes go first: LAN, then Tailscale, then T3 Connect.
+A machine can have more than one route: LAN, Tailscale, T3 Connect, or SSH. To
+add one, choose **Add route** in the machine's route list, or next to it in the
+T3 Connect list. Pairing the same machine again over another address also adds
+a route instead of a second machine. Faster routes go first: LAN, then
+Tailscale, then T3 Connect.
 
 T3 Code connects over the first route that answers. Away from home, a LAN
 address that does not answer is checked briefly and skipped. It is only tried
-again, after the other routes, if none of them connect. While connected over a later route, T3 Code checks the earlier ones when
-your network changes, when you return to the app, and every minute, and moves
-back as soon as one works.
+again, after the other routes, if none of them connect. While connected over a
+later route, T3 Code checks the earlier ones when your network changes, when you
+return to the app, and every minute, and moves back as soon as one works.
 
-To change the order or remove a route, open the machine's **Routes** menu under
-**Settings → Connections** on web and desktop, or its detail screen under
-**Settings → Environments** on mobile. Signing out of T3 Connect removes only
-that route; a machine you can still reach another way stays saved.
+On web and desktop, select the route count under the machine's name in
+**Settings → Connections** to see its routes. Drag a route to change the order,
+or remove it. On mobile, open the machine under **Settings → Environments** and
+choose **Edit**. Signing out of T3 Connect removes only that route; a machine
+you can still reach another way stays saved.
 
 ### Balance new threads across machines
 
