@@ -9,6 +9,9 @@ catalogs:
     '@effect/openapi-generator':
       specifier: 4.0.0-rc.115
       version: 4.0.0-rc.115
+    '@effect/sql-sqlite-do':
+      specifier: 4.0.0-rc.115
+      version: 4.0.0-rc.115
     '@effect/tsgo':
       specifier: 0.41.0
       version: 0.41.0
@@ -830,6 +833,9 @@ importers:
         version: 3.18.1(react-dom@19.3.0(react@19.3.0))(react@19.2.6)
       '@effect/sql-pg':
         specifier: 4.0.0-rc.115
+        version: 4.0.0-rc.115(effect@4.0.0-rc.115(patch_hash=0dfc4bb8ebd80fb3e06b91ef61346f5259517ab0f2437644fe95ae531084b1f5))
+      '@effect/sql-sqlite-do':
+        specifier: 'catalog:'
         version: 4.0.0-rc.115(effect@4.0.0-rc.115(patch_hash=0dfc4bb8ebd80fb3e06b91ef61346f5259517ab0f2437644fe95ae531084b1f5))
       '@noble/curves':
         specifier: 'catalog:'
